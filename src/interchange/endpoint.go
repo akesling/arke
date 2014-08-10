@@ -1,0 +1,4 @@
+package interchange
+
+interface Endpoint {
+}

@@ -1,0 +1,4 @@
+package interchange
+
+struct Client {
+}
