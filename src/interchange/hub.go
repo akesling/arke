@@ -1,5 +1,9 @@
 package interchange
 
+import (
+    "code.google.com/p/go.net/context"
+)
+
 // A Message constitutes the information exchanged across an Arke hub.
 type Message struct {
     Type string
@@ -10,6 +14,7 @@ type Message struct {
 
 // A subscriber is a handle to an entity subscribing on an Arke hub.
 type subscriber struct {
+    Cancel   context.CancelFunc
     Name     string
     Sink     ->chan Message
 }
@@ -23,31 +28,31 @@ type subscriber struct {
 // there will be five topic nodes: one for the root and each of foo and bar...
 // and one for each of baz and qux.
 type topicNode struct {
+    Cancel   context.CancelFunc
     Name     string
     Children *topicNode[]
     subs     subscriber[]
-    end      chan bool
     Comm     chan Message
 }
 
-func (t *topicNode) Start() {
-    // This must be set to 1 or destruct behaves incorrectly
-    t.end = make(chan bool, 1)
-
+func (t *topicNode) Start(ctx context.Context) {
     go func() {
         for {
             select {
-            case signal := <-t.end:
+            case <-ctx.Done():
                 break
             case  message := <-Comm:
-                for i := subs {
-                    // TODO(akesling): make it safe to spin this off as a
-                    // go routine.  Currently destruction can race with an
-                    // asynchronous send.
-                    t.subs[i].Sink <- message
+                for i := range subs {
+                    go func(s subscriber) {
+                        select {
+                        case s.Sink <- message:
+                        case <-s.Done():
+                            // We're done, no need to send.
+                        }
+                    }(t.subs[i])
                 }
 
-                for i := t.children {
+                for i := range t.children {
                     t.children[i].Comm <- message
                 }
             }
@@ -56,21 +61,26 @@ func (t *topicNode) Start() {
 
         // Let's shut down our children.
         for i := t.children {
-            t.children[i].destruct()
+            t.children[i].Cancel()
         }
 
         // And close our subscribers.
         for i := t.subs {
-            close(t.subs[i].Sink)
+            t.subs[i].Cancel()
         }
     }()
 }
 
-func (t *topicNode) destruct() {
+type Destructor interface {
+    Done chan bool
+    func Destruct()
+}
+
+func (d *Destructor) Destruct() {
     select {
-    case t.end <- true:
+    case d.Done <- true:
     default:
-        log.Error('Multiple call to topicNode.destruct().')
+        log.Error('Multiple call to destruct().')
     }
 }
 
@@ -92,7 +102,15 @@ func (h *hub) Publish(topic string, message Message) error {
     }()
 }
 
-func (h *hub) Subscribe(topic string) (secondsLease int, chan<- Message, error) {
+func (h *hub) Subscribe(name, topic string) (lease time.Duration, chan<- Message, error) {
+    comm := make(chan Message)
+    sub := subscriber{
+
+    }
+
+    h.addSubscriberToTopic(topic, sub)
+    return (time.Duration(5) * time.Minutes()), comm
+
 }
 
 // NewClient creates a new client for the given hub.
