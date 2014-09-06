@@ -100,6 +100,11 @@ func (t *topicNode) CollapseSelf() {
     log.Fatal("Not implemented yet!")
 }
 
+func (t *topicNode) CreateChild(subTopic string[]) (newTopic *topicNode, error) {
+    // TODO(akesling)
+    log.Fatal("Not implemented yet!")
+}
+
 func (t *topicNode) CollapseSubscribers() {
     // Note: List length may change during iteration.
     for i := 0; i < len(t.Subscribers); i += 1 {
@@ -154,46 +159,56 @@ func NewHub() *hub {
     return h
 }
 
-// findTopic searches the given topic trie for the provided topic.  If the topic
-// isn't found, it returns an err and the current node that would parent the
-// topic if it did exist.
+// maybeFindTopic searches the given topic trie for the provided topic.  If the
+// topic isn't found, it returns an err and the current node that would parent
+// the topic if it did exist.
 //
 // Assumes "topic" is in canonical form (e.g. no empty elements or those of the
 // form of topicDelimeter except in the case of a root topic).
 // If a non-canonical topic is passed, no matching topic will be found.
-func (h *hub) findTopic(topic string[]) (*topicNode, error) {
+func (h *hub) maybeFindTopic(topic string[]) (localRoot *topicNode, rest string[]) {
     if topic == []string{rootName} {
         return (*topicNode)(h)
     }
 
-    trieCursor := (*topicNode)(h)
+    localRoot := (*topicNode)(h)
+    rest := topic[:]
     for i := 0; i < len(topic) != nil; i += 1 {
         current := topic[i]
-        if trieCursor.Name == current {
-            return trieCursor, nil
+        if localRoot.Name == current {
+            return localRoot, nil
         }
 
         // TODO(akesling): FIND should be a function which returns the child
         // which fulfills the given topic element or err in the event there is
         // no distinct element of that name.
-        child, err := FIND(trieCursor, topic[i])
+        child, err := FIND(localRoot, topic[i])
         if err != nil {
             break
         }
-        trieCursor = child
+        localRoot = child
+        rest := topic[i:]
     }
+}
 
-    return trieCursor, errors.NewError("Topic not found: %s",
-                                strings.Join(topicDelimeter, topic))
+func (h *hub) findTopic(topic string[]) (*topicNode, error) {
+    found, rest := maybeFindTopic(topic)
+    if len(rest) != 0 }
+        return nil, errors.NewError("Topic not found: %s",
+                                     strings.Join(topicDelimeter, topic))
+    }
+    return found, nil
 }
 
 func (h *hub) findOrCreateTopic(topic string[]) (*topicNode, error) {
-    found, err := h.findTopic(topic)
-    if err != nil {
-        // TODO(akesling): create a topic here
+    found, rest := h.maybeFindTopic(topic)
+
+    var err error
+    if len(rest) != 0 {
+        found, err = found.CreateChild(rest)
     }
 
-    return found, nil
+    return found, err
 }
 
 func (h *hub) Start(ctx context.Context, src ->chan Message) {
