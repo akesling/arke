@@ -1,5 +1,9 @@
 package interchange
 
+import (
+    "time"
+)
+
 type Publisher interface {
     // Produce a message to the provided topic on the Arke hub.
     Publish(topic string, message Message) error
@@ -7,7 +11,7 @@ type Publisher interface {
 
 type Subscriber interface {
     // Subscribe to a given topic.
-    Subscribe(name, topic string) (lease time.Duration, chan<- Message, error)
+    Subscribe(name, topic string, lease time.Duration) (chan<- Message, error)
 }
 
 // Client allows publication and subscription to/from an Arke hub.
