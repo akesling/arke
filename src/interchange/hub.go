@@ -143,9 +143,11 @@ func mapToTopicNodes(root *topicNode, f func(*topicNode)) {
 
 // A hub plays matchmaker between publishers and subscribers.
 //
-// It is the root of the topic Trie
+// It contains the root of the topic Trie
+//
+// hub is thread-hostile, only one go-routine should access it at a time.
 type hub struct {
-    topicNode
+    root    *topicNode
 
     pub     chan *publication
     sub     chan *subscription
@@ -156,7 +158,7 @@ type hub struct {
 func NewHub() *hub {
     ctx, cancel := context.WithCancel(context.Background())
     h := &hub{
-        topicNode: topicNode {
+        root: &topicNode{
             Cancel: cancel,
             Name:   rootName,
         },
@@ -168,6 +170,21 @@ func NewHub() *hub {
     return h
 }
 
+func binarySearch(needle string, haystack []*topicNode) (index int) {
+    log.Fatal("Not implemented yet!")
+    return -1
+}
+
+func findTopic(needle string, haystack []*topicNode) (*topicNode, error) {
+    index := binarySearch(needle, haystack)
+
+    if index < 0 {
+        return nil, errors.New("Topic node not found.")
+    }
+
+    return haystack[index], nil
+}
+
 // maybeFindTopic searches the given topic trie for the provided topic.  If the
 // topic isn't found, it returns an err and the current node that would parent
 // the topic if it did exist.
@@ -177,10 +194,10 @@ func NewHub() *hub {
 // If a non-canonical topic is passed, no matching topic will be found.
 func (h *hub) maybeFindTopic(topic []string) (localRoot *topicNode, rest []string) {
     if len(topic) == 1 && topic[0]  == "." {
-        return (*topicNode)(h), []string{}
+        return h.root, []string{}
     }
 
-    localRoot = (*topicNode)(h)
+    localRoot = h.root
     rest = topic[:]
     for i := 0; i < len(topic); i += 1 {
         current := topic[i]
@@ -188,15 +205,12 @@ func (h *hub) maybeFindTopic(topic []string) (localRoot *topicNode, rest []strin
             return localRoot, nil
         }
 
-        // TODO(akesling): FIND should be a function which returns the child
-        // which fulfills the given topic element or err in the event there is
-        // no distinct element of that name.
-        child, err := FIND(localRoot, topic[i])
+        child, err := findTopic(topic[i], localRoot.Children)
         if err != nil {
             break
         }
         localRoot = child
-        rest := topic[i:]
+        rest = topic[i:]
     }
 
     return localRoot, rest
