@@ -3,6 +3,7 @@ package interchange
 import (
     "code.google.com/p/go.net/context"
     "errors"
+    "fmt"
     "log"
     "time"
     "strings"
@@ -10,10 +11,10 @@ import (
 
 const (
     // Delimiter between topic elements.
-    topicDelimeter = '.'
+    topicDelimeter = "."
 
     // Name of the Arke hub's root topic.
-    rootName = '.'
+    rootName = "."
 
     // Number of dead subscribers per topic before we walk the subscriber list
     // and collect the garbage.
@@ -36,7 +37,7 @@ type publication struct {
 type subscription struct {
     Topic []string
     Name string
-    Deadline time.Duration
+    Deadline time.Time
     Client chan<- Message
 }
 
@@ -68,14 +69,15 @@ type topicNode struct {
     Subscribers []*subscriber
 }
 
-func (t *topicNode) AddSub(sub subscription, cleanup chan<- []string) {
+func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
     ctx, cancel := context.WithDeadline(t.ctx, sub.Deadline)
     comm := make(chan Message)
 
     go func(ctx context.Context, source <-chan Message) {
         for {
             select {
-            case sub.Client <- source:
+            case message := <- source:
+                sub.Client <- message
             case <-ctx.Done():
                 close(sub.Client)
                 break
@@ -89,7 +91,7 @@ func (t *topicNode) AddSub(sub subscription, cleanup chan<- []string) {
         notify <- topic
     }(sub.Topic, cleanup)
 
-    t.Subscribers.Append(subscriber{
+    t.Subscribers = append(t.Subscribers, &subscriber{
         Cancel: cancel,
         Done: ctx.Done(),
         Name: sub.Name,
@@ -105,6 +107,7 @@ func (t *topicNode) CollapseSelf() {
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
     // TODO(akesling)
     log.Fatal("Not implemented yet!")
+    return nil, nil
 }
 
 func (t *topicNode) CollapseSubscribers() {
@@ -112,7 +115,11 @@ func (t *topicNode) CollapseSubscribers() {
     for i := 0; i < len(t.Subscribers); i += 1 {
         select {
         case <-t.Subscribers[i].Done:
-            last := max(0, len(t.Subscribers)-1)
+            var last uint
+            if len(t.Subscribers) > 0 {
+                last = uint(len(t.Subscribers)-1)
+            }
+
             t.Subscribers[i] = t.Subscribers[last]
             // Truncate slice to exclude now-defunct final element.
             t.Subscribers = t.Subscribers[0:last]
@@ -127,7 +134,7 @@ func (t *topicNode) CollapseSubscribers() {
 
 // mapToTopicNodes recursively post-applies a function to all topicNodes in a
 // topic trie rooted at "root".
-func mapToTopicNodes(root topicNode, f func(topicNode)) {
+func mapToTopicNodes(root *topicNode, f func(*topicNode)) {
     for i := range root.Children {
         mapToTopicNodes(root.Children[i], f)
     }
@@ -149,7 +156,7 @@ type hub struct {
 func NewHub() *hub {
     ctx, cancel := context.WithCancel(context.Background())
     h := &hub{
-        topicNode{
+        topicNode: topicNode {
             Cancel: cancel,
             Name:   rootName,
         },
@@ -169,13 +176,13 @@ func NewHub() *hub {
 // form of topicDelimeter except in the case of a root topic).
 // If a non-canonical topic is passed, no matching topic will be found.
 func (h *hub) maybeFindTopic(topic []string) (localRoot *topicNode, rest []string) {
-    if topic == []string{rootName} {
-        return (*topicNode)(h)
+    if len(topic) == 1 && topic[0]  == "." {
+        return (*topicNode)(h), []string{}
     }
 
     localRoot = (*topicNode)(h)
     rest = topic[:]
-    for i := 0; i < len(topic) != nil; i += 1 {
+    for i := 0; i < len(topic); i += 1 {
         current := topic[i]
         if localRoot.Name == current {
             return localRoot, nil
@@ -191,13 +198,16 @@ func (h *hub) maybeFindTopic(topic []string) (localRoot *topicNode, rest []strin
         localRoot = child
         rest := topic[i:]
     }
+
+    return localRoot, rest
 }
 
 func (h *hub) findTopic(topic []string) (*topicNode, error) {
-    found, rest := maybeFindTopic(topic)
+    found, rest := h.maybeFindTopic(topic)
     if len(rest) != 0 {
-        return nil, errors.NewError("Topic not found: %s",
-                                     strings.Join(topicDelimeter, topic))
+        return nil, errors.New(
+            fmt.Sprintf("Topic not found: %s",
+                        strings.Join(topic, topicDelimeter)))
     }
     return found, nil
 }
@@ -213,19 +223,19 @@ func (h *hub) findOrCreateTopic(topic []string) (*topicNode, error) {
     return found, err
 }
 
-func (h *hub) Start(ctx context.Context, src chan<- Message) {
+func (h *hub) Start(ctx context.Context) {
     go func() {
         // LET THE EVENTS BEGIN!
         for {
             select {
-            case newPub <- pub:
+            case newPub := <-h.pub:
                 topic, err := h.findTopic(newPub.Topic)
                 if err != nil {
                     // There currently aren't subscribers for the desired topic.
                     continue
                 }
 
-                mapToTopicNodes(topic, func (t topicNode) {
+                mapToTopicNodes(topic, func (t *topicNode) {
                     for i := range t.Subscribers {
                         // TODO(akesling): Assure strict ordering of sent
                         // messages... this currently isn't _actually_ enforced
@@ -235,12 +245,12 @@ func (h *hub) Start(ctx context.Context, src chan<- Message) {
                         go func(s *subscriber) {
                             select {
                             case s.Sink <- newPub.Message:
-                            case <-s.Done():
+                            case <-s.Done:
                             }
                         }(t.Subscribers[i])
                     }
                 })
-            case newSub <- sub:
+            case newSub := <-h.sub:
                 topic, err := h.findOrCreateTopic(newSub.Topic)
                 if err != nil {
                     // Already logged.
@@ -248,21 +258,21 @@ func (h *hub) Start(ctx context.Context, src chan<- Message) {
                 }
 
                 topic.AddSub(newSub, h.cleanup)
-            case topic := <-cleanup:
-                topic, err := h.findTopic(newPub.Topic)
+            case topic := <-h.cleanup:
+                tNode, err := h.findTopic(topic)
                 if err != nil {
                     // There currently aren't subscribers for the desired topic.
                     continue
                 }
 
-                topic.deadSubs += 1
-                if topic.deadSubs >= collectionThreshold {
-                    topic.CollapseSubscribers()
+                tNode.deadSubs += 1
+                if tNode.deadSubs >= collectionThreshold {
+                    tNode.CollapseSubscribers()
 
-                    if len(topic.Subscribers) == 0 {
-                        topic.CollapseSelf()
+                    if len(tNode.Subscribers) == 0 {
+                        tNode.CollapseSelf()
                     } else {
-                        topic.deadSubs = 0
+                        tNode.deadSubs = 0
                     }
                 }
             case <-ctx.Done():
@@ -282,7 +292,7 @@ func (h *hub) Start(ctx context.Context, src chan<- Message) {
 // from multiple clients may be interleaved, but per-client ordering is
 // guaranteed).
 func (h *hub) Publish(topic string, message Message) error {
-    h.pub <- publication{
+    h.pub <- &publication{
         Topic: strings.Split(topic, topicDelimeter),
         Message: message,
     }
@@ -295,8 +305,9 @@ func (h *hub) Publish(topic string, message Message) error {
 // Return does not imply that a subscriber is active yet, only that the
 // subscription is now queued.  The subscription lease returned is the minimum
 // amount of time that this subscriber may be active... the subscription may
-// last longer than that time after this method returns.
+// last longer than that time after Subscribe() invocation.
 func (h *hub) Subscribe(name, topic string, lease time.Duration) (chan<- Message, error) {
+    deadline := time.Now().Add(lease)
     comm := make(chan Message)
     var expandedTopic []string
 
@@ -307,18 +318,19 @@ func (h *hub) Subscribe(name, topic string, lease time.Duration) (chan<- Message
     }
 
     go func() {
-        h.sub <- subscription{
+        h.sub <- &subscription{
             Topic: expandedTopic,
             Name: name,
-            Deadline: lease,
+            Deadline: deadline,
             Client: comm,
         }
     }()
 
-    return comm
+    return comm, nil
 }
 
 // NewClient creates a new Client for the given hub.
 func (h *hub) NewClient() *Client {
-    return Client(h)
+    temp := Client(h)
+    return &temp
 }
