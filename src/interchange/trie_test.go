@@ -2,13 +2,14 @@ package interchange
 
 import (
     "fmt"
+    "reflect"
     "testing"
 )
 
 func TestCreateChild(t *testing.T) {
-    tNode := topicNode{ Name: ["foo"] }
+    tNode := newTopicNode([]string{"foo"})
 
-    bar_baz, err := tNode.CreateChild(["bar", "baz"])
+    bar_baz, err := tNode.CreateChild([]string{"bar", "baz"})
     if err != nil {
         t.Error("CreateChild returned error when topicNode creation was expected.")
     }
@@ -19,7 +20,7 @@ func TestCreateChild(t *testing.T) {
         t.Error("CreateChild returned a node other than the one which it stored.")
     }
 
-    bar_baz2, err := tNode.CreateChild(["bar", "baz"])
+    bar_baz2, err := tNode.CreateChild([]string{"bar", "baz"})
     if err != nil {
         t.Error("CreateChild returned error when no-op was expected.")
     }
@@ -33,7 +34,7 @@ func TestCreateChild(t *testing.T) {
         t.Error("CreateChild returned a node other than the one which it stored.")
     }
 
-    bar_qux, err := tNode.CreateChild(["bar", "qux"])
+    bar_qux, err := tNode.CreateChild([]string{"bar", "qux"})
     if err != nil {
         t.Error("CreateChild returned error when topicNode creation was expected.")
     }
@@ -46,7 +47,7 @@ func TestCreateChild(t *testing.T) {
     if bar_baz == tNode.Children[0] || bar_qux == tNode.Children[0] {
         t.Error("CreateChild did not properly create a new trie branching node.")
     }
-    if tNode.Children[0].Name != ["bar"] {
+    if !reflect.DeepEqual(tNode.Children[0].Name, []string{"bar"}) {
         t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [\"bar\"] and got %s", tNode.Children[0].Name))
     }
     if bar_baz != tNode.Children[0].Children[0] {

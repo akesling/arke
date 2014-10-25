@@ -1,25 +1,8 @@
 package interchange
 
 import (
-    "fmt"
     "testing"
 )
-
-func testCreateChild(t *testing.T) {
-    topic := []string{"foo"}
-    root := new(topicNode)
-    newNode, err := root.CreateChild(topic)
-    if err != nil {
-        t.Error("CreateChild returned error when topicNode creation was expected.")
-    }
-
-    if len(root.Children) != 1 {
-        t.Error(fmt.Sprintf("CreateChild created %s children when 1 was expected.", len(root.Children)))
-    }
-    if newNode != root.Children[0] {
-        t.Error("CreateChild returned a node other than the one which it stored.")
-    }
-}
 
 func TestFindOrCreateTopic(t *testing.T) {
     topic := []string{"foo"}

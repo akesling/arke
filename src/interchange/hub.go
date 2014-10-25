@@ -4,7 +4,6 @@ import (
     "code.google.com/p/go.net/context"
     "errors"
     "fmt"
-    "log"
     "time"
     "strings"
 )
@@ -65,11 +64,13 @@ type hub struct {
 // NewHub builds a hub.
 func NewHub() *hub {
     ctx, cancel := context.WithCancel(context.Background())
+
+    new_root := newTopicNode([]string{rootName})
+    new_root.ctx = ctx
+    new_root.Cancel = cancel
+
     h := &hub{
-        root: &topicNode{
-            Cancel: cancel,
-            Name:   rootName,
-        },
+        root: new_root,
         pub: make(chan *publication),
         sub: make(chan *subscription),
     }
@@ -78,64 +79,20 @@ func NewHub() *hub {
     return h
 }
 
-func binarySearch(needle string, haystack []*topicNode) (index int) {
-    log.Fatal("Not implemented yet!")
-    return -1
-}
-
-func findTopic(needle string, haystack []*topicNode) (*topicNode, error) {
-    index := binarySearch(needle, haystack)
-
-    if index < 0 {
-        return nil, errors.New("Topic node not found.")
-    }
-
-    return haystack[index], nil
-}
-
-// maybeFindTopic searches the given topic trie for the provided topic.  If the
-// topic isn't found, it returns an err and the current node that would parent
-// the topic if it did exist.
-//
-// Assumes "topic" is in canonical form (e.g. no empty elements or those of the
-// form of topicDelimeter except in the case of a root topic).
-// If a non-canonical topic is passed, no matching topic will be found.
-func (h *hub) maybeFindTopic(topic []string) (localRoot *topicNode, rest []string) {
-    if len(topic) == 1 && topic[0]  == "." {
-        return h.root, []string{}
-    }
-
-    localRoot = h.root
-    rest = topic[:]
-    for i := 0; i < len(topic); i += 1 {
-        current := topic[i]
-        if localRoot.Name == current {
-            return localRoot, nil
-        }
-
-        child, err := findTopic(topic[i], localRoot.Children)
-        if err != nil {
-            break
-        }
-        localRoot = child
-        rest = topic[i:]
-    }
-
-    return localRoot, rest
-}
-
 func (h *hub) findTopic(topic []string) (*topicNode, error) {
-    found, rest := h.maybeFindTopic(topic)
+    found, rest := h.root.MaybeFindTopic(topic)
+
     if len(rest) != 0 {
         return nil, errors.New(
             fmt.Sprintf("Topic not found: %s",
                         strings.Join(topic, topicDelimeter)))
     }
+
     return found, nil
 }
 
 func (h *hub) findOrCreateTopic(topic []string) (*topicNode, error) {
-    found, rest := h.maybeFindTopic(topic)
+    found, rest := h.root.MaybeFindTopic(topic)
 
     var err error
     if len(rest) != 0 {
@@ -154,10 +111,11 @@ func (h *hub) Start(ctx context.Context) {
                 topic, err := h.findTopic(newPub.Topic)
                 if err != nil {
                     // There currently aren't subscribers for the desired topic.
+                    // TODO(akesling): log INFO output.
                     continue
                 }
 
-                mapToTopicNodes(topic, func (t *topicNode) {
+                topic.Map(func (t *topicNode) {
                     for i := range t.Subscribers {
                         // TODO(akesling): Assure strict ordering of sent
                         // messages... this currently isn't _actually_ enforced
@@ -192,7 +150,7 @@ func (h *hub) Start(ctx context.Context) {
                     tNode.CollapseSubscribers()
 
                     if len(tNode.Subscribers) == 0 {
-                        tNode.CollapseSelf()
+                        tNode.Collapse()
                     } else {
                         tNode.deadSubs = 0
                     }

@@ -27,6 +27,14 @@ type topicNode struct {
     Subscribers []*subscriber
 }
 
+func newTopicNode(name []string) *topicNode {
+    return &topicNode{
+        Name:           name,
+        Children:       make([]*topicNode, 0, 10),
+        Subscribers:    make([]*subscriber, 0, 10),
+    }
+}
+
 func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
     ctx, cancel := context.WithDeadline(t.ctx, sub.Deadline)
     comm := make(chan Message)
@@ -57,9 +65,59 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
     })
 }
 
+// MaybeFindTopic searches the given topic trie for the provided topic.
+//
+// An empty `rest` indicates success.
+//
+// If the topic isn't found, it returns the closest ancestor node to what would
+// be the parent of the topic if it did exist.  In the failure case, rest will
+// be the remainder of the name string that wasn't found.
+//
+// Assumes `topic` is in canonical form (e.g. no empty elements or those of the
+// form of topicDelimeter except in the case of a root topic).
+// If a non-canonical topic is passed, no matching topic will be found.
+func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest []string) {
+    if len(topic) < 1 || t == nil {
+        return t, []string{}
+    }
+
+    // TODO(akesling): Reimplement this as something better than a
+    // linear search.
+    nearestTopic = t
+    head := topic[0]
+    rest = topic[1:]
+    for i := range t.Children {
+        child := t.Children[i]
+
+        if len(child.Name) < 1 {
+            log.Fatal("Hub child has an empty name.")
+        }
+
+        if head == child.Name[0] {
+            nearestTopic = child
+
+            for i := 1; i < len(child.Name) && i < len(topic); i += 1 {
+                if topic[i] != child.Name[i] {
+                    return child.MaybeFindTopic(topic[i:])
+                }
+                rest = topic[i+1:]
+            }
+
+            break
+        }
+    }
+
+    return nearestTopic, rest
+}
+
 // If this child already exists, it's considered a no-op and CreateChild
 // returns successfully with newTopic being the existing child.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
+    if len(subTopic) == 0 {
+        return t, nil
+    }
+
+    //candidate, rest := t.MaybeFindTopic(subTopic)
     // TODO(akesling)
     log.Fatal("Not implemented yet!")
     return nil, nil
@@ -99,7 +157,7 @@ func (t *topicNode) Collapse() {
         t.Children[0] = nil
         t.Children = t.Children[0:0]
 
-        t.Name = append(t.Name, child.Name)
+        t.Name = append(t.Name, child.Name...)
         t.Subscribers = child.Subscribers
         t.Children = child.Children
     }
