@@ -79,6 +79,7 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
     }(sub.Topic, cleanup)
 
     t.Subscribers = append(t.Subscribers, &subscriber{
+        ctx: ctx,
         Cancel: cancel,
         Done: ctx.Done(),
         Name: sub.Name,
@@ -210,9 +211,10 @@ func reseatTopicNode(parent, to_be_reseated *topicNode) {
     to_be_reseated.Map(parent, func(parent, child *topicNode) {
         child.ctx, child.Cancel = context.WithCancel(parent.ctx)
         for i := range child.Subscribers {
-            // Reseat all subscribers.
-            fmt.Println(i)
-            panic(errors.New("Reseating subscribers not yet supported"))
+            sub := child.Subscribers[i]
+            deadline, _ := sub.ctx.Deadline()
+            sub.ctx, sub.Cancel = context.WithDeadline(child.ctx, deadline)
+            sub.Done = sub.ctx.Done()
         }
     })
 }

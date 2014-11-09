@@ -42,6 +42,7 @@ type subscription struct {
 
 // A subscriber is a handle to an entity subscribing on an Arke hub.
 type subscriber struct {
+    ctx      context.Context
     Cancel   context.CancelFunc
     Done     <-chan struct{}
     Name     string
