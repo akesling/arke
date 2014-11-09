@@ -32,15 +32,21 @@ func newTopicNode(ctx context.Context, cancel context.CancelFunc, name []string)
     return &topicNode{
         ctx:            ctx,
         Cancel:         cancel,
-        Name:           name,
+        Name:           copyTopic(name),
         Children:       make([]*topicNode, 0, 10),
         Subscribers:    make([]*subscriber, 0, 10),
     }
 }
 
-func IsValidTopic(name []string) bool {
-    for i := range name {
-        token := name[i]
+func copyTopic(topic []string) []string {
+    cp := make([]string, len(topic))
+    copy(cp, topic)
+    return cp
+}
+
+func IsValidTopic(topic []string) bool {
+    for i := range topic {
+        token := topic[i]
         switch (token) {
             case "", ".":
                 return false
@@ -97,9 +103,9 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
 // If a non-canonical topic is passed, no matching topic will be found.
 // XXX(akesling): Properly allow caller to understand whether we found a
 // "clean" parent or an overlapping "parent".
-func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest []string, overlaps bool) {
+func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest, overlap []string) {
     if len(topic) < 1 || t == nil {
-        return t, []string{}, false
+        return t, []string{}, []string{}
     }
 
     // TODO(akesling): Reimplement this as something better than a
@@ -124,7 +130,7 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
             for i := 1; i < len(child.Name) && i < len(topic); i += 1 {
                 // Names partially overlap
                 if topic[i] != child.Name[i] {
-                    return nearestTopic, newCopy(topic), true
+                    return nearestTopic, copyTopic(topic), copyTopic(topic[:i])
                 }
                 rest = topic[i+1:]
             }
@@ -139,13 +145,7 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
         }
     }
 
-    return nearestTopic, newCopy(rest), false
-}
-
-func newCopy(name []string) []string {
-    cp := make([]string, len(name))
-    copy(cp, name)
-    return cp
+    return nearestTopic, copyTopic(rest), []string{}
 }
 
 // If this child already exists, it's considered a no-op and CreateChild
@@ -177,24 +177,27 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
     }
 
     // Sub-topic already exists -> return sub-topic
-    candidate, rest, overlaps := t.MaybeFindTopic(subTopic)
+    candidate, rest, overlap := t.MaybeFindTopic(subTopic)
     if len(rest) == 0 {
         return candidate, nil
     }
 
-    // MaybeFindTopic gives us the closest topicNode to our goal,
-    // thus we may construct a child of that node with a name of
-    // "rest" if the rest isn't overlapping.
-    if !overlaps {
-        child_ctx, cancel_child := context.WithCancel(candidate.ctx)
-        new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
-        candidate.Children = append(candidate.Children, new_topic_node)
-
-        return new_topic_node, nil
+    parent := candidate
+    if len(overlap) > 0 {
+        // Overlap exists, so we must split the returned node.
+        parent = newTopicNode(candidate.ctx, candidate.Cancel, overlap)
+        reseatTopicNode(parent, candidate)
     }
 
-    // Since they overlap, we need to do some trie surgery
-    panic(errors.New("Overlapping not implemented yet."))
+    child_ctx, cancel_child := context.WithCancel(parent.ctx)
+    new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
+    parent.Children = append(parent.Children, new_topic_node)
+
+    return new_topic_node, nil
+}
+
+func reseatTopicNode(new_parent, to_be_reseated *topicNode) {
+    panic(errors.New("Reseating not yet implemented."))
 }
 
 func (t *topicNode) Collapse() {
