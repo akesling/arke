@@ -93,9 +93,13 @@ func TestCreateChild(t *testing.T) {
     ctx, cancel := context.WithCancel(context.Background())
     tNode := newTopicNode(ctx, cancel, []string{"foo"})
 
-    bar_baz, err := tNode.CreateChild([]string{"bar", "baz"})
+    bar_baz_path := []string{"bar", "baz"}
+    bar_baz, err := tNode.CreateChild(bar_baz_path)
     if err != nil {
         t.Error("CreateChild returned error when topicNode creation was expected.")
+    }
+    if !reflect.DeepEqual(bar_baz.Name, []string{"bar", "baz"}) {
+        t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_baz_path))
     }
     if len(tNode.Children) != 1 {
         t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(tNode.Children)))
@@ -104,41 +108,44 @@ func TestCreateChild(t *testing.T) {
         t.Error(fmt.Sprintf("CreateChild returned a node (%+v) other than the one which it stored (%+v).", bar_baz, child_node))
     }
 
-    bar_baz2, err := tNode.CreateChild([]string{"bar", "baz"})
+    should_be_bar_baz, err := tNode.CreateChild(bar_baz_path)
     if err != nil {
-        t.Error("CreateChild returned error when no-op was expected.")
+        t.Error(fmt.Sprintf("CreateChild returned error when no-op was expected: %s", err))
     }
     if len(tNode.Children) != 1 {
         t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(tNode.Children)))
     }
-    if bar_baz2 != bar_baz {
-        t.Error("CreateChild returned a new node when returning an existing node was expected")
+    if should_be_bar_baz != bar_baz {
+        t.Error(fmt.Sprintf("CreateChild returned a new node (%+v) when returning an existing node was expected (%+v)", should_be_bar_baz, bar_baz))
     }
-    if bar_baz2 != tNode.Children[0] {
+    if should_be_bar_baz != tNode.Children[0] {
         t.Error("CreateChild returned a node other than the one which it stored.")
     }
 
-    bar_qux, err := tNode.CreateChild([]string{"bar", "qux"})
+    bar_qux_path := []string{"bar", "qux"}
+    bar_qux, err := tNode.CreateChild(bar_qux_path)
     if err != nil {
         t.Error("CreateChild returned error when topicNode creation was expected.")
     }
+    if !reflect.DeepEqual(bar_qux.Name, bar_qux_path) {
+        t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_qux_path))
+    }
     if len(tNode.Children) != 1 {
-        t.Error(fmt.Sprintf("CreateChild modified the direct children of the node unexpectedly.  It has 1 child, and now has %s.", len(tNode.Children)))
+        t.Error(fmt.Sprintf("CreateChild created a node unexpectedly at a higher level. The relative root had 1 child, and now has %s.", len(tNode.Children)))
     }
-    if bar_baz != bar_qux {
-        t.Error("CreateChild returned an existing node when returning a new node was expected")
-    }
-    if bar_baz == tNode.Children[0] || bar_qux == tNode.Children[0] {
-        t.Error("CreateChild did not properly create a new trie branching node.")
+    if bar_baz == bar_qux {
+        t.Error(fmt.Sprintf("CreateChild returned an existing node (%+v) when returning a new node was expected (%+v)", bar_baz, bar_qux))
     }
     if !reflect.DeepEqual(tNode.Children[0].Name, []string{"bar"}) {
-        t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [bar] and got %s", tNode.Children[0].Name))
+        t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [\"bar\"] and got %q", tNode.Children[0].Name))
+        return
     }
-    if bar_baz != tNode.Children[0].Children[0] {
-        t.Error("CreateChild incorrectly expanded the trie structure.")
-    }
-    if bar_qux != tNode.Children[0].Children[1] {
-        t.Error("CreateChild incorrectly expanded the trie structure.")
+    if bar_baz == tNode.Children[0].Children[0] && bar_qux == tNode.Children[0].Children[1] {
+        children := make([]topicNode, len(tNode.Children[0].Children))
+        for i := range tNode.Children[0].Children {
+            children[i] = *tNode.Children[0].Children[i]
+        }
+        t.Error(fmt.Sprintf("CreateChild incorrectly expanded the trie structure. Children of new branch are %+v", children))
     }
 }
 

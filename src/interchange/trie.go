@@ -184,9 +184,18 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 
     parent := candidate
     if len(overlap) > 0 {
-        // Overlap exists, so we must split the returned node.
-        parent = newTopicNode(candidate.ctx, candidate.Cancel, overlap)
-        reseatTopicNode(parent, candidate)
+        // Overlap exists, so we must split the found candidate.
+        parent.Name = copyTopic(overlap)
+        ctx, cancel := context.WithCancel(parent.ctx)
+        new_child := newTopicNode(ctx, cancel, rest[len(overlap):])
+
+        new_child.Children = parent.Children
+        parent.Children = make([]*topicNode, 0, 10)
+
+        new_child.Subscribers = parent.Subscribers
+        parent.Subscribers = make([]*subscriber, 0, 10)
+
+        reseatTopicNode(parent, new_child)
     }
 
     child_ctx, cancel_child := context.WithCancel(parent.ctx)
@@ -196,8 +205,16 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
     return new_topic_node, nil
 }
 
-func reseatTopicNode(new_parent, to_be_reseated *topicNode) {
-    panic(errors.New("Reseating not yet implemented."))
+func reseatTopicNode(parent, to_be_reseated *topicNode) {
+    parent.Children = append(parent.Children, to_be_reseated)
+    to_be_reseated.Map(parent, func(parent, child *topicNode) {
+        child.ctx, child.Cancel = context.WithCancel(parent.ctx)
+        for i := range child.Subscribers {
+            // Reseat all subscribers.
+            fmt.Println(i)
+            panic(errors.New("Reseating subscribers not yet supported"))
+        }
+    })
 }
 
 func (t *topicNode) Collapse() {
@@ -266,11 +283,11 @@ func (t *topicNode) CollapseSubscribers() {
     }
 }
 
-// Map recursively post-applies a function to all topicNodes in a
+// Map recursively pre-applies a function to all topicNodes in a
 // topic trie rooted at the callee.
-func (t *topicNode) Map(f func(*topicNode)) {
+func (t *topicNode) Map(parent *topicNode, f func(parent, child *topicNode)) {
+    f(parent, t)
     for i := range t.Children {
-        t.Children[i].Map(f)
+        t.Children[i].Map(t, f)
     }
-    f(t)
 }

@@ -113,7 +113,7 @@ func (h *hub) Start(ctx context.Context) {
                     continue
                 }
 
-                topic.Map(func (t *topicNode) {
+                topic.Map(nil, func (_, t *topicNode) {
                     for i := range t.Subscribers {
                         // TODO(akesling): Assure strict ordering of sent
                         // messages... this currently isn't _actually_ enforced
