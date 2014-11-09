@@ -36,50 +36,54 @@ func TestMaybeFindTopic(t *testing.T) {
 
     rest_expectation := func(path, rest_expected, rest_returned []string) {
         if !reflect.DeepEqual(rest_expected, rest_returned) {
-            t.Error(fmt.Sprintf("For provided path (%v), MaybeFindTopic returned a name remainder (%v) when it should have been (%v).", path, rest_expected, rest_returned))
+            t.Error(fmt.Sprintf("For provided path (%q), MaybeFindTopic returned a name remainder (%q) when it should have been (%q).", path, rest_returned, rest_expected))
         }
     }
 
     // Find exact topics
     path := []string{"foo"}
-    should_be_foo, rest := root.MaybeFindTopic(path)
+    should_be_foo, rest, overlaps := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo, _foo)
     rest_expectation(path, []string{}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     path = []string{"foo", "bar"}
-    should_be_foo_bar, rest := root.MaybeFindTopic(path)
+    should_be_foo_bar, rest, overlaps := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_bar, _foo_bar)
     rest_expectation(path, []string{}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     path = []string{"foo", "baz"}
-    should_be_foo_baz, rest := root.MaybeFindTopic(path)
+    should_be_foo_baz, rest, overlaps := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_baz, _foo_baz)
     rest_expectation(path, []string{}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     path = []string{"qux"}
-    should_be_qux, rest := root.MaybeFindTopic(path)
+    should_be_qux, rest, overlaps := root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux, _qux)
     rest_expectation(path, []string{}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     path = []string{"qux", "foo", "bar"}
-    should_be_qux__foo_bar, rest := root.MaybeFindTopic(path)
+    should_be_qux__foo_bar, rest, overlaps := root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux__foo_bar, _qux__foo_bar)
     rest_expectation(path, []string{}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     // Return rest with found parent
     path = []string{"foo", "bar", "baz"}
-    should_be_foo_bar, rest = root.MaybeFindTopic(path)
+    should_be_foo_bar, rest, overlaps = root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_bar, _foo_bar)
-    rest_expectation(path, []string{"bar"}, rest)
+    rest_expectation(path, []string{"baz"}, rest)
+    if overlaps { t.Error("Path should not overlap."); }
 
     // Return rest with overlapping parent
-    t.Error("Overlapping return value provides an inconsistent state.  This
-    should be fixed so that caller understands when something is
-    overlapping....")
     path = []string{"qux", "foo", "baz"}
-    should_be_qux__foo_bar, rest = root.MaybeFindTopic(path)
+    should_be_qux__foo_bar, rest, overlaps = root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux__foo_bar, _qux__foo_bar)
-    rest_expectation(path, []string{"baz"}, rest)
+    rest_expectation(path, []string{"foo", "baz"}, rest)
+    if !overlaps { t.Error("Path should overlap."); }
 }
 
 func TestCreateChild(t *testing.T) {

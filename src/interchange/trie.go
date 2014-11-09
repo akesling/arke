@@ -4,7 +4,6 @@ import (
     "code.google.com/p/go.net/context"
     "errors"
     "fmt"
-    "log"
 )
 
 // A topicNode represents a vertex in the topic trie.
@@ -98,36 +97,40 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
 // If a non-canonical topic is passed, no matching topic will be found.
 // XXX(akesling): Properly allow caller to understand whether we found a
 // "clean" parent or an overlapping "parent".
-func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest []string) {
+func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest []string, overlaps bool) {
     if len(topic) < 1 || t == nil {
-        return t, []string{}
+        return t, []string{}, false
     }
 
     // TODO(akesling): Reimplement this as something better than a
     // linear search.
     nearestTopic = t
     head := topic[0]
-    rest = topic[1:]
+    rest = topic
     for i := range t.Children {
         child := t.Children[i]
 
         if len(child.Name) < 1 {
-            log.Fatal("Hub child has an empty name.")
+            // Empty names can wreak terrible havoc on all
+            // trie manipulations... thus this violates a
+            // core invariant and we should die accordingly.
+            panic(errors.New("Hub child has an empty name."))
         }
 
         if head == child.Name[0] {
             nearestTopic = child
+            rest = topic[1:]
 
             for i := 1; i < len(child.Name) && i < len(topic); i += 1 {
                 // Names partially overlap
                 if topic[i] != child.Name[i] {
-                    return nearestTopic, rest
+                    return nearestTopic, newCopy(topic), true
                 }
                 rest = topic[i+1:]
             }
 
-            // The child's name has been consumed and we should look at its
-            // children to find more of our topic.
+            // The current child's name has been consumed and we should look at
+            // its children to find more of our topic.
             if len(rest) != 0 {
                 return nearestTopic.MaybeFindTopic(rest)
             }
@@ -136,7 +139,13 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
         }
     }
 
-    return nearestTopic, rest
+    return nearestTopic, newCopy(rest), false
+}
+
+func newCopy(name []string) []string {
+    cp := make([]string, len(name))
+    copy(cp, name)
+    return cp
 }
 
 // If this child already exists, it's considered a no-op and CreateChild
@@ -155,8 +164,6 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 // This requires rebinding a new context for baz and its subscribers and
 // children that derives from the new foo.bar.  We then add a qux node that derives
 // from foo.bar.
-// TODO(akesling): Fix the massive performance problem that the
-//                 above paragraph implies.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
     if !IsValidTopic(subTopic) {
         return nil, errors.New(fmt.Sprintf(
@@ -170,18 +177,24 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
     }
 
     // Sub-topic already exists -> return sub-topic
-    candidate, rest := t.MaybeFindTopic(subTopic)
+    candidate, rest, overlaps := t.MaybeFindTopic(subTopic)
     if len(rest) == 0 {
         return candidate, nil
     }
 
-    // MaybeFindTopic gives us the closest topicNode to our goal, thus we may
-    // construct a child of that node with a name of "rest".
-    child_ctx, cancel_child := context.WithCancel(candidate.ctx)
-    new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
-    candidate.Children = append(candidate.Children, new_topic_node)
+    // MaybeFindTopic gives us the closest topicNode to our goal,
+    // thus we may construct a child of that node with a name of
+    // "rest" if the rest isn't overlapping.
+    if !overlaps {
+        child_ctx, cancel_child := context.WithCancel(candidate.ctx)
+        new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
+        candidate.Children = append(candidate.Children, new_topic_node)
 
-    return new_topic_node, nil
+        return new_topic_node, nil
+    }
+
+    // Since they overlap, we need to do some trie surgery
+    panic(errors.New("Overlapping not implemented yet."))
 }
 
 func (t *topicNode) Collapse() {

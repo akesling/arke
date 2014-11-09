@@ -78,7 +78,7 @@ func NewHub() *hub {
 }
 
 func (h *hub) findTopic(topic []string) (*topicNode, error) {
-    found, rest := h.root.MaybeFindTopic(topic)
+    found, rest, _ := h.root.MaybeFindTopic(topic)
 
     if len(rest) != 0 {
         return nil, errors.New(
@@ -90,7 +90,7 @@ func (h *hub) findTopic(topic []string) (*topicNode, error) {
 }
 
 func (h *hub) findOrCreateTopic(topic []string) (*topicNode, error) {
-    found, rest := h.root.MaybeFindTopic(topic)
+    found, rest, _ := h.root.MaybeFindTopic(topic)
 
     var err error
     if len(rest) != 0 {
