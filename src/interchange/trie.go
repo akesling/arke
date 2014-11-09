@@ -2,6 +2,8 @@ package interchange
 
 import (
     "code.google.com/p/go.net/context"
+    "errors"
+    "fmt"
     "log"
 )
 
@@ -27,12 +29,26 @@ type topicNode struct {
     Subscribers []*subscriber
 }
 
-func newTopicNode(name []string) *topicNode {
+func newTopicNode(ctx context.Context, cancel context.CancelFunc, name []string) *topicNode {
     return &topicNode{
+        ctx:            ctx,
+        Cancel:         cancel,
         Name:           name,
         Children:       make([]*topicNode, 0, 10),
         Subscribers:    make([]*subscriber, 0, 10),
     }
+}
+
+func IsValidTopic(name []string) bool {
+    for i := range name {
+        token := name[i]
+        switch (token) {
+            case "", ".":
+                return false
+        }
+    }
+
+    return true
 }
 
 func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
@@ -70,12 +86,18 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
 // An empty `rest` indicates success.
 //
 // If the topic isn't found, it returns the closest ancestor node to what would
-// be the parent of the topic if it did exist.  In the failure case, rest will
-// be the remainder of the name string that wasn't found.
+// be the parent of the topic if it did exist.  This returned node may require
+// realigning its name, e.g. `rest` may be foo.bar.baz where the name of the
+// returned node is foo.bar.qux.
+
+// In the failure case, rest will be the remainder of the name string that
+// wasn't found.
 //
 // Assumes `topic` is in canonical form (e.g. no empty elements or those of the
 // form of topicDelimeter except in the case of a root topic).
 // If a non-canonical topic is passed, no matching topic will be found.
+// XXX(akesling): Properly allow caller to understand whether we found a
+// "clean" parent or an overlapping "parent".
 func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest []string) {
     if len(topic) < 1 || t == nil {
         return t, []string{}
@@ -97,10 +119,17 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
             nearestTopic = child
 
             for i := 1; i < len(child.Name) && i < len(topic); i += 1 {
+                // Names partially overlap
                 if topic[i] != child.Name[i] {
-                    return child.MaybeFindTopic(topic[i:])
+                    return nearestTopic, rest
                 }
                 rest = topic[i+1:]
+            }
+
+            // The child's name has been consumed and we should look at its
+            // children to find more of our topic.
+            if len(rest) != 0 {
+                return nearestTopic.MaybeFindTopic(rest)
             }
 
             break
@@ -112,15 +141,47 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 
 // If this child already exists, it's considered a no-op and CreateChild
 // returns successfully with newTopic being the existing child.
+//
+// CreateChild has for resulting cases:
+// 1) Error on invalid subTopic
+// 2) Return existing topicNode
+// 3) Create new topicNode in the trie
+// 4) Modify trie structure in the process of 2 or 3
+//
+// Case 4 happens when we have an existing node with an overlapping run from our
+// desired new topic name.  E.g. we have a foo.bar.baz node in the trie but we
+// want to create a node foo.bar.qux.  In this case, we must create a foo.bar
+// node with foo.bar.baz being renamed baz and assigned as a child of foo.bar.
+// This requires rebinding a new context for baz and its subscribers and
+// children that derives from the new foo.bar.  We then add a qux node that derives
+// from foo.bar.
+// TODO(akesling): Fix the massive performance problem that the
+//                 above paragraph implies.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
+    if !IsValidTopic(subTopic) {
+        return nil, errors.New(fmt.Sprintf(
+            "Malformed topicName (%s) provided to CreateChild of topicNode (%s)",
+            subTopic, t.Name))
+    }
+
+    // Empty sub-topic name -> return self
     if len(subTopic) == 0 {
         return t, nil
     }
 
-    //candidate, rest := t.MaybeFindTopic(subTopic)
-    // TODO(akesling)
-    log.Fatal("Not implemented yet!")
-    return nil, nil
+    // Sub-topic already exists -> return sub-topic
+    candidate, rest := t.MaybeFindTopic(subTopic)
+    if len(rest) == 0 {
+        return candidate, nil
+    }
+
+    // MaybeFindTopic gives us the closest topicNode to our goal, thus we may
+    // construct a child of that node with a name of "rest".
+    child_ctx, cancel_child := context.WithCancel(candidate.ctx)
+    new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
+    candidate.Children = append(candidate.Children, new_topic_node)
+
+    return new_topic_node, nil
 }
 
 func (t *topicNode) Collapse() {

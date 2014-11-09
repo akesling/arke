@@ -65,9 +65,7 @@ type hub struct {
 func NewHub() *hub {
     ctx, cancel := context.WithCancel(context.Background())
 
-    new_root := newTopicNode([]string{rootName})
-    new_root.ctx = ctx
-    new_root.Cancel = cancel
+    new_root := newTopicNode(ctx, cancel, []string{rootName})
 
     h := &hub{
         root: new_root,
