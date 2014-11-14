@@ -5,6 +5,7 @@ import (
     "fmt"
     "reflect"
     "testing"
+    "time"
 )
 
 func TestMaybeFindTopic(t *testing.T) {
@@ -34,7 +35,7 @@ func TestMaybeFindTopic(t *testing.T) {
         }
     }
 
-    rest_expectation := func(path, rest_expected, rest_returned []string) {
+    path_expectation := func(path, rest_expected, rest_returned []string) {
         if !reflect.DeepEqual(rest_expected, rest_returned) {
             t.Error(fmt.Sprintf("For provided path (%q), MaybeFindTopic returned a name remainder (%q) when it should have been (%q).", path, rest_returned, rest_expected))
         }
@@ -45,53 +46,53 @@ func TestMaybeFindTopic(t *testing.T) {
     path := []string{"foo"}
     should_be_foo, rest, overlap := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo, _foo)
-    rest_expectation(path, []string{}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{}, rest)
+    path_expectation(path, []string{}, overlap)
 
     path = []string{"foo", "bar"}
     should_be_foo_bar, rest, overlap := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_bar, _foo_bar)
-    rest_expectation(path, []string{}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{}, rest)
+    path_expectation(path, []string{}, overlap)
 
     path = []string{"foo", "baz"}
     should_be_foo_baz, rest, overlap := root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_baz, _foo_baz)
-    rest_expectation(path, []string{}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{}, rest)
+    path_expectation(path, []string{}, overlap)
 
     path = []string{"qux"}
     should_be_qux, rest, overlap := root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux, _qux)
-    rest_expectation(path, []string{}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{}, rest)
+    path_expectation(path, []string{}, overlap)
 
     path = []string{"qux", "foo", "bar"}
     should_be_qux__foo_bar, rest, overlap := root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux__foo_bar, _qux__foo_bar)
-    rest_expectation(path, []string{}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{}, rest)
+    path_expectation(path, []string{}, overlap)
 
     // Return rest with found parent
     /******************************/
     path = []string{"foo", "bar", "baz"}
     should_be_foo_bar, rest, overlap = root.MaybeFindTopic(path)
     child_expectation(path, should_be_foo_bar, _foo_bar)
-    rest_expectation(path, []string{"baz"}, rest)
-    rest_expectation(path, []string{}, overlap)
+    path_expectation(path, []string{"baz"}, rest)
+    path_expectation(path, []string{}, overlap)
 
     // Return rest with overlapping parent
     /************************************/
     path = []string{"qux", "foo", "baz"}
     should_be_qux__foo_bar, rest, overlap = root.MaybeFindTopic(path)
     child_expectation(path, should_be_qux__foo_bar, _qux__foo_bar)
-    rest_expectation(path, []string{"foo", "baz"}, rest)
-    rest_expectation(path, []string{"foo"}, overlap)
+    path_expectation(path, []string{"foo", "baz"}, rest)
+    path_expectation(path, []string{"foo"}, overlap)
 }
 
 func TestCreateChild(t *testing.T) {
     ctx, cancel := context.WithCancel(context.Background())
-    tNode := newTopicNode(ctx, cancel, []string{"foo"})
+    tNode := newTopicNode(ctx, cancel, []string{"."})
 
     bar_baz_path := []string{"bar", "baz"}
     bar_baz, err := tNode.CreateChild(bar_baz_path)
@@ -150,19 +151,51 @@ func TestCreateChild(t *testing.T) {
 }
 
 func TestAddSub(t *testing.T) {
-    /*
-    topic := []string{"foo"}
-    root := new(topicNode)
-    newNode, err := root.CreateChild(topic)
-    if err != nil {
-        t.Error("CreateChild returned error when topicNode creation was expected.")
+    root_ctx, cancel_root := context.WithCancel(context.Background())
+    root := newTopicNode(root_ctx, cancel_root, []string{"."})
+
+    topic := []string{"foo", "bar"}
+    new_node, _ := root.CreateChild(topic)
+
+    death_notifications := make(chan []string)
+    client_messages := make(chan Message)
+
+    new_subscriber := new_node.AddSub(&subscription{
+            Topic: topic,
+            Name: "source",
+            Deadline: time.Now().Add(time.Minute*20),
+            Client: client_messages,
+        }, death_notifications)
+
+
+    for i:=0; i<10; i+=1 {
+        message_sent := Message{ Source: fmt.Sprintf("test_%d", i) }
+        new_subscriber.Sink <- message_sent
+
+        select {
+            case message_received := <-client_messages:
+                if !reflect.DeepEqual(message_sent, message_received) {
+                    t.Error(fmt.Sprintf("(%d): Message received (%+v) did not match message expected (%+v)"), i, message_received, message_sent)
+                }
+            default:
+                t.Error(fmt.Sprintf("(%d): Expected message never received from subscriber", i))
+        }
     }
 
-    if len(root.Children) != 1 {
-        t.Error(fmt.Sprintf("CreateChild created %s children when 1 was expected.", len(root.Children)))
+    cancel_root()
+    select {
+        case notified_topic := <-death_notifications:
+            if !reflect.DeepEqual(notified_topic, topic) {
+                t.Error(fmt.Sprintf("Expected topic (%q) does not equal topic notified (%q)", topic, notified_topic))
+            }
+        case <-time.After(1 * time.Second):
+            t.Error("Timed out waiting for notification of subscriber death.")
+            return
     }
-    if newNode != root.Children[0] {
-        t.Error("CreateChild returned a node other than the one which it stored.")
+
+    select {
+        case <-client_messages:
+        default:
+            t.Error("Client channel not closed by dying subscriber")
     }
-    */
 }

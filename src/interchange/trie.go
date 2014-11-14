@@ -56,18 +56,24 @@ func IsValidTopic(topic []string) bool {
     return true
 }
 
-func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
+// AddSub creates a subscriber, attaches it to this topicNode and starts it.
+//
+// Parameters:
+//  sub: The subscription from which to build the new Subscriber
+//  cleanup: The channel via which the subscriber's 'death' will notify the hub.
+func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) *subscriber {
     ctx, cancel := context.WithDeadline(t.ctx, sub.Deadline)
     comm := make(chan Message)
 
     go func(ctx context.Context, source <-chan Message) {
+        event_loop:
         for {
             select {
             case message := <- source:
                 sub.Client <- message
             case <-ctx.Done():
                 close(sub.Client)
-                break
+                break event_loop
             }
         }
     }(ctx, comm)
@@ -78,13 +84,16 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) {
         notify <- topic
     }(sub.Topic, cleanup)
 
-    t.Subscribers = append(t.Subscribers, &subscriber{
+    new_subscriber := &subscriber{
         ctx: ctx,
         Cancel: cancel,
         Done: ctx.Done(),
         Name: sub.Name,
         Sink: comm,
-    })
+    }
+    t.Subscribers = append(t.Subscribers, new_subscriber)
+
+    return new_subscriber
 }
 
 // MaybeFindTopic searches the given topic trie for the provided topic.

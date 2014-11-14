@@ -104,6 +104,7 @@ func (h *hub) findOrCreateTopic(topic []string) (*topicNode, error) {
 func (h *hub) Start(ctx context.Context) {
     go func() {
         // LET THE EVENTS BEGIN!
+        event_loop:
         for {
             select {
             case newPub := <-h.pub:
@@ -155,7 +156,7 @@ func (h *hub) Start(ctx context.Context) {
                     }
                 }
             case <-ctx.Done():
-                break
+                break event_loop
             }
         }
     }()
