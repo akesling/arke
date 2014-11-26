@@ -235,9 +235,8 @@ func reseatTopicNode(parent, to_be_reseated *topicNode) {
 // Collapse is the effective garbage collection operation for a topic trie.
 //
 // It culls dead subscribers and topicNodes which no longer have any
-// subscribers.
-//
-// Recursively collapse children and clean up empty trie branches.
+// subscribers.  Recursively collapses children and cleans up empty trie
+// branches.
 func (t *topicNode) Collapse() {
 	t.CollapseSubscribers()
 
@@ -250,8 +249,7 @@ func (t *topicNode) Collapse() {
 				break
 			}
 
-			var last uint
-			last = uint(len(t.Children) - 1)
+			last := uint(len(t.Children) - 1)
 
 			t.Children[i] = t.Children[last]
 			// Remove the array's ref to this child so it can be collected.
@@ -275,7 +273,6 @@ func (t *topicNode) Collapse() {
 		t.Subscribers = child.Subscribers
 		t.Children = child.Children
 	}
-
 }
 
 func (t *topicNode) CollapseSubscribers() {

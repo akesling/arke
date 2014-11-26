@@ -30,6 +30,55 @@ func TestIsValidTopic(t *testing.T) {
 	expect_not_valid([]string{"."})
 }
 
+func TestAddSub(t *testing.T) {
+	root_ctx, cancel_root := context.WithCancel(context.Background())
+	root := newTopicNode(root_ctx, cancel_root, []string{"."})
+
+	topic := []string{"foo", "bar"}
+	new_node, _ := root.CreateChild(topic)
+
+	death_notifications := make(chan []string)
+	client_messages := make(chan Message)
+
+	new_subscriber := new_node.AddSub(&subscription{
+		Topic:    topic,
+		Name:     "source",
+		Deadline: time.Now().Add(time.Minute * 20),
+		Client:   client_messages,
+	}, death_notifications)
+
+	for i := 0; i < 10; i += 1 {
+		message_sent := Message{Source: fmt.Sprintf("test_%d", i)}
+		new_subscriber.Sink <- message_sent
+
+		select {
+		case message_received := <-client_messages:
+			if !reflect.DeepEqual(message_sent, message_received) {
+				t.Error(fmt.Sprintf("(%d): Message received (%+v) did not match message expected (%+v)", i, message_received, message_sent))
+			}
+		default:
+			t.Error(fmt.Sprintf("(%d): Expected message never received from subscriber", i))
+		}
+	}
+
+	cancel_root()
+	select {
+	case notified_topic := <-death_notifications:
+		if !reflect.DeepEqual(notified_topic, topic) {
+			t.Error(fmt.Sprintf("Expected topic (%q) does not equal topic notified (%q)", topic, notified_topic))
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("Timed out waiting for notification of subscriber death.")
+		return
+	}
+
+	select {
+	case <-client_messages:
+	default:
+		t.Error("Client channel not closed by dying subscriber")
+	}
+}
+
 func TestMaybeFindTopic(t *testing.T) {
 	// Build a sample topicTrie
 	ctx, cancel := context.WithCancel(context.Background())
@@ -172,54 +221,58 @@ func TestCreateChild(t *testing.T) {
 	}
 }
 
-func TestAddSub(t *testing.T) {
-	root_ctx, cancel_root := context.WithCancel(context.Background())
-	root := newTopicNode(root_ctx, cancel_root, []string{"."})
+func TestCollapse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	root := newTopicNode(ctx, cancel, []string{"."})
 
-	topic := []string{"foo", "bar"}
-	new_node, _ := root.CreateChild(topic)
+	root.CreateChild([]string{"foo", "bar", "baz", "qux"})
+	root.CreateChild([]string{"foo", "bar", "baz", "quuz"})
+	root.CreateChild([]string{"foo", "quuz"})
+	root.CreateChild([]string{"foo", "qux"})
 
 	death_notifications := make(chan []string)
 	client_messages := make(chan Message)
 
-	new_subscriber := new_node.AddSub(&subscription{
-		Topic:    topic,
+	foo_baz_flibbity_blibbity_bop, _ := root.CreateChild([]string{"foo", "baz", "flibbity", "blibbity", "bop"})
+	foo_baz_flibbity_blibbity_bop.AddSub(&subscription{
+		Topic:    []string{"foo", "baz", "flibbity", "blibbity", "bop"},
 		Name:     "source",
 		Deadline: time.Now().Add(time.Minute * 20),
 		Client:   client_messages,
 	}, death_notifications)
 
-	for i := 0; i < 10; i += 1 {
-		message_sent := Message{Source: fmt.Sprintf("test_%d", i)}
-		new_subscriber.Sink <- message_sent
+	root.Collapse()
 
-		select {
-		case message_received := <-client_messages:
-			if !reflect.DeepEqual(message_sent, message_received) {
-				t.Error(fmt.Sprintf("(%d): Message received (%+v) did not match message expected (%+v)", i, message_received, message_sent))
-			}
-		default:
-			t.Error(fmt.Sprintf("(%d): Expected message never received from subscriber", i))
-		}
+	foo, _, _ := root.MaybeFindTopic([]string{"foo"})
+	if len(foo.Name) != 1 || foo.Name[0] != "foo" {
+		t.Error(fmt.Sprintf("Expected [\"foo\"] and got %q", foo.Name))
 	}
 
-	cancel_root()
-	select {
-	case notified_topic := <-death_notifications:
-		if !reflect.DeepEqual(notified_topic, topic) {
-			t.Error(fmt.Sprintf("Expected topic (%q) does not equal topic notified (%q)", topic, notified_topic))
-		}
-	case <-time.After(1 * time.Second):
-		t.Error("Timed out waiting for notification of subscriber death.")
-		return
+	should_be_foo, _, _ := root.MaybeFindTopic([]string{"foo", "bar", "baz", "qux"})
+	if foo != should_be_foo {
+		t.Error("topic found was not the one expected")
+	}
+	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "bar", "baz", "quuz"})
+	if foo != should_be_foo {
+		t.Error("topic found was not the one expected")
+	}
+	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "quuz"})
+	if foo != should_be_foo {
+		t.Error("topic found was not the one expected")
+	}
+	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "qux"})
+	if foo != should_be_foo {
+		t.Error("topic found was not the one expected")
 	}
 
-	select {
-	case <-client_messages:
-	default:
-		t.Error("Client channel not closed by dying subscriber")
+	should_be_foo_baz_flibbity_blibbity_bop, _, _ := root.MaybeFindTopic([]string{"foo", "baz", "flibbity", "blibbity", "bop"})
+	if foo_baz_flibbity_blibbity_bop != should_be_foo_baz_flibbity_blibbity_bop {
+		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo_baz_flibbity_blibbity_bop, foo_baz_flibbity_blibbity_bop))
 	}
-}
 
-func TestCollapse(t *testing.T) {
+	cancel()
+	root.Collapse()
+	if len(root.Children) > 0 {
+		t.Error("Root has children, when the full trie should have collapsed")
+	}
 }
