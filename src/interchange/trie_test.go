@@ -163,62 +163,66 @@ func TestMaybeFindTopic(t *testing.T) {
 
 func TestCreateChild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	tNode := newTopicNode(ctx, cancel, []string{"."})
+	root := newTopicNode(ctx, cancel, []string{"."})
 
 	bar_baz_path := []string{"bar", "baz"}
-	bar_baz, err := tNode.CreateChild(bar_baz_path)
+	bar_baz, err := root.CreateChild(bar_baz_path)
 	if err != nil {
 		t.Error("CreateChild returned error when topicNode creation was expected.")
 	}
 	if !reflect.DeepEqual(bar_baz.Name, []string{"bar", "baz"}) {
 		t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_baz_path))
 	}
-	if len(tNode.Children) != 1 {
-		t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(tNode.Children)))
+	if len(root.Children) != 1 {
+		t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(root.Children)))
 	}
-	if child_node := tNode.Children[0]; bar_baz != child_node {
+	if child_node := root.Children[0]; bar_baz != child_node {
 		t.Error(fmt.Sprintf("CreateChild returned a node (%+v) other than the one which it stored (%+v).", bar_baz, child_node))
 	}
 
-	should_be_bar_baz, err := tNode.CreateChild(bar_baz_path)
+	should_be_bar_baz, err := root.CreateChild(bar_baz_path)
 	if err != nil {
 		t.Error(fmt.Sprintf("CreateChild returned error when no-op was expected: %s", err))
 	}
-	if len(tNode.Children) != 1 {
-		t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(tNode.Children)))
+	if len(root.Children) != 1 {
+		t.Error(fmt.Sprintf("CreateChild created %d children when 1 was expected.", len(root.Children)))
 	}
 	if should_be_bar_baz != bar_baz {
 		t.Error(fmt.Sprintf("CreateChild returned a new node (%+v) when returning an existing node was expected (%+v)", should_be_bar_baz, bar_baz))
 	}
-	if should_be_bar_baz != tNode.Children[0] {
+	if should_be_bar_baz != root.Children[0] {
 		t.Error("CreateChild returned a node other than the one which it stored.")
 	}
 
 	bar_qux_path := []string{"bar", "qux"}
-	bar_qux, err := tNode.CreateChild(bar_qux_path)
+	bar_qux, err := root.CreateChild(bar_qux_path)
 	if err != nil {
 		t.Error("CreateChild returned error when topicNode creation was expected.")
 	}
 	if !reflect.DeepEqual(bar_qux.Name, bar_qux_path) {
 		t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_qux_path))
 	}
-	if len(tNode.Children) != 1 {
-		t.Error(fmt.Sprintf("CreateChild created a node unexpectedly at a higher level. The relative root had 1 child, and now has %d.", len(tNode.Children)))
+	if len(root.Children) != 1 {
+		t.Error(fmt.Sprintf("CreateChild created a node unexpectedly at a higher level. The relative root had 1 child, and now has %d.", len(root.Children)))
 	}
 	if bar_baz == bar_qux {
 		t.Error(fmt.Sprintf("CreateChild returned an existing node (%+v) when returning a new node was expected (%+v)", bar_baz, bar_qux))
 	}
-	if !reflect.DeepEqual(tNode.Children[0].Name, []string{"bar"}) {
-		t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [\"bar\"] and got %q", tNode.Children[0].Name))
+	if !reflect.DeepEqual(root.Children[0].Name, []string{"bar"}) {
+		t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [\"bar\"] and got %q", root.Children[0].Name))
 		return
 	}
-	if bar_baz == tNode.Children[0].Children[0] && bar_qux == tNode.Children[0].Children[1] {
-		children := make([]topicNode, len(tNode.Children[0].Children))
-		for i := range tNode.Children[0].Children {
-			children[i] = *tNode.Children[0].Children[i]
+	if bar_baz == root.Children[0].Children[0] && bar_qux == root.Children[0].Children[1] {
+		children := make([]topicNode, len(root.Children[0].Children))
+		for i := range root.Children[0].Children {
+			children[i] = *root.Children[0].Children[i]
 		}
 		t.Error(fmt.Sprintf("CreateChild incorrectly expanded the trie structure. Children of new branch are %+v", children))
 	}
+}
+
+func TestCollapseSubscribers(t *testing.T) {
+	// TODO(akesling)
 }
 
 func TestCollapse(t *testing.T) {
@@ -227,42 +231,50 @@ func TestCollapse(t *testing.T) {
 
 	root.CreateChild([]string{"foo", "bar", "baz", "qux"})
 	root.CreateChild([]string{"foo", "bar", "baz", "quuz"})
-	root.CreateChild([]string{"foo", "quuz"})
 	root.CreateChild([]string{"foo", "qux"})
 
 	death_notifications := make(chan []string)
-	client_messages := make(chan Message)
 
+	client1_messages := make(chan Message)
 	foo_baz_flibbity_blibbity_bop, _ := root.CreateChild([]string{"foo", "baz", "flibbity", "blibbity", "bop"})
 	foo_baz_flibbity_blibbity_bop.AddSub(&subscription{
 		Topic:    []string{"foo", "baz", "flibbity", "blibbity", "bop"},
 		Name:     "source",
 		Deadline: time.Now().Add(time.Minute * 20),
-		Client:   client_messages,
+		Client:   client1_messages,
+	}, death_notifications)
+
+	client2_messages := make(chan Message)
+	foo_quuz, _ := root.CreateChild([]string{"foo", "quuz"})
+	foo_quuz.AddSub(&subscription{
+		Topic:    []string{"foo", "quuz"},
+		Name:     "source",
+		Deadline: time.Now().Add(time.Minute * 20),
+		Client:   client2_messages,
 	}, death_notifications)
 
 	root.Collapse()
 
 	foo, _, _ := root.MaybeFindTopic([]string{"foo"})
-	if len(foo.Name) != 1 || foo.Name[0] != "foo" {
-		t.Error(fmt.Sprintf("Expected [\"foo\"] and got %q", foo.Name))
+	if !(len(foo.Name) == 1 && foo.Name[0] == "foo") {
+		t.Error(fmt.Sprintf("Expected topic with name [\"foo\"], received topic with name %q", foo.Name))
 	}
-
 	should_be_foo, _, _ := root.MaybeFindTopic([]string{"foo", "bar", "baz", "qux"})
 	if foo != should_be_foo {
-		t.Error("topic found was not the one expected")
+		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
 	}
 	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "bar", "baz", "quuz"})
 	if foo != should_be_foo {
-		t.Error("topic found was not the one expected")
-	}
-	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "quuz"})
-	if foo != should_be_foo {
-		t.Error("topic found was not the one expected")
+		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
 	}
 	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "qux"})
 	if foo != should_be_foo {
-		t.Error("topic found was not the one expected")
+		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
+	}
+
+	should_be_foo_quuz, _, _ := root.MaybeFindTopic([]string{"foo", "quuz"})
+	if foo_quuz != should_be_foo_quuz {
+		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo_quuz, foo_quuz))
 	}
 
 	should_be_foo_baz_flibbity_blibbity_bop, _, _ := root.MaybeFindTopic([]string{"foo", "baz", "flibbity", "blibbity", "bop"})

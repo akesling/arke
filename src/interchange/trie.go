@@ -241,7 +241,7 @@ func (t *topicNode) Collapse() {
 	t.CollapseSubscribers()
 
 	for i := 0; i < len(t.Children); i += 1 {
-		child := t.Children[0]
+		child := t.Children[i]
 		child.Collapse()
 
 		if len(child.Subscribers) == 0 && len(child.Children) == 0 {
@@ -264,7 +264,8 @@ func (t *topicNode) Collapse() {
 	}
 
 	// Collapse unnecessary runs of subscriber-free nodes.
-	if len(t.Subscribers) == 0 && len(t.Children) == 1 {
+	// Leave the root node strictly named as ["."].
+	if t.Name[0] != "." && len(t.Subscribers) == 0 && len(t.Children) == 1 {
 		child := t.Children[0]
 		t.Children[0] = nil
 		t.Children = t.Children[0:0]
