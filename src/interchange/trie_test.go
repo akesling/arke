@@ -261,7 +261,7 @@ func TestCollapse(t *testing.T) {
 	}
 
 	type Expectation struct {
-		Name  []string
+		Query []string
 		Value *topicNode
 	}
 
@@ -276,7 +276,7 @@ func TestCollapse(t *testing.T) {
 
 	for i := range topic_expectations {
 		expectation := topic_expectations[i]
-		found, _, _ := root.MaybeFindTopic(expectation.Name)
+		found, _, _ := root.MaybeFindTopic(expectation.Query)
 		if found != expectation.Value {
 			t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", found, expectation.Value))
 		}
