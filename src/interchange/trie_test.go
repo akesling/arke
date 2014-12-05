@@ -255,31 +255,39 @@ func TestCollapse(t *testing.T) {
 
 	root.Collapse()
 
+	expect_topic := func(name []string, expected *topicNode) string {
+		found, _, _ := root.MaybeFindTopic(name)
+		if found != expected {
+			return fmt.Sprintf("Topic found %+v was not the one expected %+v", found, expected)
+		}
+		return ""
+	}
+
 	foo, _, _ := root.MaybeFindTopic([]string{"foo"})
 	if !(len(foo.Name) == 1 && foo.Name[0] == "foo") {
 		t.Error(fmt.Sprintf("Expected topic with name [\"foo\"], received topic with name %q", foo.Name))
 	}
-	should_be_foo, _, _ := root.MaybeFindTopic([]string{"foo", "bar", "baz", "qux"})
-	if foo != should_be_foo {
-		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
-	}
-	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "bar", "baz", "quuz"})
-	if foo != should_be_foo {
-		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
-	}
-	should_be_foo, _, _ = root.MaybeFindTopic([]string{"foo", "qux"})
-	if foo != should_be_foo {
-		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo, foo))
+
+	type Expectation struct {
+		Name  []string
+		Value *topicNode
 	}
 
-	should_be_foo_quuz, _, _ := root.MaybeFindTopic([]string{"foo", "quuz"})
-	if foo_quuz != should_be_foo_quuz {
-		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo_quuz, foo_quuz))
+	topic_expectations := []Expectation{
+		{[]string{"foo", "bar", "baz", "qux"}, foo},
+		{[]string{"foo", "bar", "baz", "quuz"}, foo},
+		{[]string{"foo", "qux"}, foo},
+		{[]string{"foo", "qux"}, foo},
+		{[]string{"foo", "quuz"}, foo_quuz},
+		{[]string{"foo", "baz", "flibbity", "blibbity", "bop"}, foo_baz_flibbity_blibbity_bop},
 	}
 
-	should_be_foo_baz_flibbity_blibbity_bop, _, _ := root.MaybeFindTopic([]string{"foo", "baz", "flibbity", "blibbity", "bop"})
-	if foo_baz_flibbity_blibbity_bop != should_be_foo_baz_flibbity_blibbity_bop {
-		t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", should_be_foo_baz_flibbity_blibbity_bop, foo_baz_flibbity_blibbity_bop))
+	for i := range topic_expectations {
+		expectation := topic_expectations[i]
+		error_string := expect_topic(expectation.Name, expectation.Value)
+		if error_string != "" {
+			t.Error(error_string)
+		}
 	}
 
 	cancel()
