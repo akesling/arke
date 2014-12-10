@@ -219,6 +219,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 	return new_topic_node, nil
 }
 
+// reseatTopicNode moves `to_be_reseated` from its current parent onto `parent`.
 func reseatTopicNode(parent, to_be_reseated *topicNode) {
 	parent.Children = append(parent.Children, to_be_reseated)
 	to_be_reseated.Map(parent, func(parent, child *topicNode) {

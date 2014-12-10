@@ -221,6 +221,63 @@ func TestCreateChild(t *testing.T) {
 	}
 }
 
+func TestReseatTopicNode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	root := newTopicNode(ctx, cancel, []string{"."})
+
+	foo, _ := root.CreateChild([]string{"foo"})
+	foo_bar, _ := root.CreateChild([]string{"foo", "bar"})
+	foo_bar_baz, _ := root.CreateChild([]string{"foo", "bar", "baz"})
+
+	death_notifications := make(chan []string)
+
+	client1_messages := make(chan Message)
+	foo_bar_baz.AddSub(&subscription{
+		Topic:    []string{"foo", "bar", "baz"},
+		Name:     "flib",
+		Deadline: time.Now().Add(time.Minute * 20),
+		Client:   client1_messages,
+	}, death_notifications)
+
+	client2_messages := make(chan Message)
+	foo_bar_baz.AddSub(&subscription{
+		Topic:    []string{"foo", "bar", "baz"},
+		Name:     "bilf",
+		Deadline: time.Now().Add(time.Minute * 20),
+		Client:   client2_messages,
+	}, death_notifications)
+
+	reseatTopicNode(foo, foo_bar_baz)
+	if len(foo.Children) != 2 || foo.Children[0] != foo_bar || foo.Children[1] != foo_bar_baz {
+		t.Error(
+			fmt.Sprintf(
+				"Expected foo to have the two children [%p %p], but it instead has %v",
+				foo_bar, foo_bar_baz, foo.Children))
+	}
+
+	foo_bar.Cancel()
+	select {
+	case <-foo_bar_baz.ctx.Done():
+		t.Error("foo_bar_baz's context was improperly reseated")
+	case <-foo_bar_baz.Subscribers[0].Done:
+		t.Error("foo_bar_baz's first subscriber's context was improperly reseated")
+	case <-foo_bar_baz.Subscribers[1].Done:
+		t.Error("foo_bar_baz's first subscriber's context was improperly reseated")
+	default:
+	}
+
+	foo.Cancel()
+	for _ = range []int{0, 1, 2} {
+		select {
+		case <-foo_bar_baz.ctx.Done():
+		case <-foo_bar_baz.Subscribers[0].Done:
+		case <-foo_bar_baz.Subscribers[1].Done:
+		default:
+			t.Error("foo_bar_baz or its subscribers were improperly reseated")
+		}
+	}
+}
+
 func TestCollapseSubscribers(t *testing.T) {
 	// TODO(akesling)
 }
