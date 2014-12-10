@@ -288,6 +288,7 @@ func TestCollapse(t *testing.T) {
 
 	root.CreateChild([]string{"foo", "bar", "baz", "qux"})
 	root.CreateChild([]string{"foo", "bar", "baz", "quuz"})
+	root.CreateChild([]string{"foo", "baz"})
 	root.CreateChild([]string{"foo", "qux"})
 
 	death_notifications := make(chan []string)
@@ -326,7 +327,7 @@ func TestCollapse(t *testing.T) {
 		{[]string{"foo", "bar", "baz", "qux"}, foo},
 		{[]string{"foo", "bar", "baz", "quuz"}, foo},
 		{[]string{"foo", "qux"}, foo},
-		{[]string{"foo", "qux"}, foo},
+		{[]string{"foo", "baz"}, foo_baz_flibbity_blibbity_bop},
 		{[]string{"foo", "quuz"}, foo_quuz},
 		{[]string{"foo", "baz", "flibbity", "blibbity", "bop"}, foo_baz_flibbity_blibbity_bop},
 	}
