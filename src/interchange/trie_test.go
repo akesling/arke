@@ -283,15 +283,22 @@ func TestCollapseSubscribers(t *testing.T) {
 }
 
 func TestCollapse(t *testing.T) {
+	// Build out the topic trie
 	ctx, cancel := context.WithCancel(context.Background())
 	root := newTopicNode(ctx, cancel, []string{"."})
 
 	root.CreateChild([]string{"foo", "bar", "baz", "qux"})
 	root.CreateChild([]string{"foo", "bar", "baz", "quuz"})
-	root.CreateChild([]string{"foo", "baz"})
 	root.CreateChild([]string{"foo", "qux"})
 
 	death_notifications := make(chan []string)
+
+	// Add some subscribers to different nodes so the collapse will preserve
+	// some trie structure.
+
+	// Create an unnecessary node to precede a node with a subscriber so that we
+	// may evaluate its elision later.
+	foo_baz, _ := root.CreateChild([]string{"foo", "baz"})
 
 	client1_messages := make(chan Message)
 	foo_baz_flibbity_blibbity_bop, _ := root.CreateChild([]string{"foo", "baz", "flibbity", "blibbity", "bop"})
@@ -311,6 +318,8 @@ func TestCollapse(t *testing.T) {
 		Client:   client2_messages,
 	}, death_notifications)
 
+	// Collapse all but those nodes that are structurally necessary to support
+	// currently active subscriber relationships.
 	root.Collapse()
 
 	foo, _, _ := root.MaybeFindTopic([]string{"foo"})
@@ -321,25 +330,35 @@ func TestCollapse(t *testing.T) {
 	type Expectation struct {
 		Query []string
 		Value *topicNode
+		Name  []string
 	}
 
 	topic_expectations := []Expectation{
-		{[]string{"foo", "bar", "baz", "qux"}, foo},
-		{[]string{"foo", "bar", "baz", "quuz"}, foo},
-		{[]string{"foo", "qux"}, foo},
-		{[]string{"foo", "baz"}, foo_baz_flibbity_blibbity_bop},
-		{[]string{"foo", "quuz"}, foo_quuz},
-		{[]string{"foo", "baz", "flibbity", "blibbity", "bop"}, foo_baz_flibbity_blibbity_bop},
+		{[]string{"foo", "bar", "baz", "qux"}, foo, []string{"foo"}},
+		{[]string{"foo", "bar", "baz", "quuz"}, foo, []string{"foo"}},
+		{[]string{"foo", "qux"}, foo, []string{"foo"}},
+		{[]string{"foo", "baz"}, foo_baz, []string{"baz", "flibbity", "blibbity", "bop"}},
+		{[]string{"foo", "quuz"}, foo_quuz, []string{"quuz"}},
+		// As foo.baz is a subscriber-free single-child node, it is
+		// flibbity.blibbity.bop is collapsed into it, thus the node we
+		// retrieved above as foo.baz is now foo.baz.flibbity.blippity.bop.
+		{[]string{"foo", "baz", "flibbity", "blibbity", "bop"}, foo_baz, []string{"baz", "flibbity", "blibbity", "bop"}},
 	}
 
 	for i := range topic_expectations {
 		expectation := topic_expectations[i]
 		found, _, _ := root.MaybeFindTopic(expectation.Query)
 		if found != expectation.Value {
-			t.Error(fmt.Sprintf("Topic found %+v was not the one expected %+v", found, expectation.Value))
+			t.Error(fmt.Sprintf("In the search for %q, topic found %p :: %+v was not the one expected %p :: %+v", expectation.Query, found, found, expectation.Value, expectation.Value))
+		}
+
+		if !reflect.DeepEqual(found.Name, expectation.Name) {
+			t.Error(fmt.Sprintf("In search for %q, name of topic found %q does not equal expected topic name %q", expectation.Query, found.Name, expectation.Name))
 		}
 	}
 
+	// Kill all subscriptions so we can test
+	// whether the trie will fully collapse.
 	cancel()
 	root.Collapse()
 	if len(root.Children) > 0 {

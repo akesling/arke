@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go.net/context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func copyTopic(topic []string) []string {
@@ -222,7 +223,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 // reseatTopicNode moves `to_be_reseated` from its current parent onto `parent`.
 func reseatTopicNode(parent, to_be_reseated *topicNode) {
 	parent.Children = append(parent.Children, to_be_reseated)
-	to_be_reseated.Map(parent, func(parent, child *topicNode) {
+	to_be_reseated.Apply(parent, func(parent, child *topicNode) {
 		child.ctx, child.Cancel = context.WithCancel(parent.ctx)
 		for i := range child.Subscribers {
 			sub := child.Subscribers[i]
@@ -265,7 +266,12 @@ func (t *topicNode) Collapse() {
 	}
 
 	// Collapse unnecessary runs of subscriber-free nodes.
-	// Leave the root node strictly named as ["."].
+	// Leave the root node strictly named ["."].
+	//
+	// Note that reseating is unnecessary here as the context-hierarchy is
+	// preserved in the elision of an intervening descendant; e.g. the removal
+	// of B in A->B->C => A->C still preserves the property that cancellation of
+	// A results in the cancellation of C.
 	if t.Name[0] != "." && len(t.Subscribers) == 0 && len(t.Children) == 1 {
 		child := t.Children[0]
 		t.Children[0] = nil
@@ -303,11 +309,49 @@ func (t *topicNode) CollapseSubscribers() {
 	}
 }
 
-// Map recursively pre-applies a function to all topicNodes in a
+// Apply recursively pre-applies a function to all topicNodes in a
 // topic trie rooted at the callee.
-func (t *topicNode) Map(parent *topicNode, f func(parent, child *topicNode)) {
+func (t *topicNode) Apply(parent *topicNode, f func(parent, child *topicNode)) {
 	f(parent, t)
 	for i := range t.Children {
-		t.Children[i].Map(t, f)
+		t.Children[i].Apply(t, f)
 	}
+}
+
+func (t *topicNode) render(indentation string) string {
+	var tokens []string
+
+	tokens = append(tokens, indentation+strings.Join(t.Name, ".")+".")
+
+	// Partition children by "structural type"
+	var leaves []*topicNode
+	var sub_tries []*topicNode
+	for i := range t.Children {
+		child := t.Children[i]
+		if len(child.Children) > 0 {
+			sub_tries = append(sub_tries, child)
+		} else {
+			leaves = append(leaves, child)
+		}
+	}
+
+	// Render leaves on one line
+	if len(leaves) > 0 {
+		var leaf_line []string
+		for i := range leaves {
+			leaf_line = append(leaf_line, strings.Join(leaves[i].Name, "."))
+		}
+		tokens = append(tokens, indentation+"\t"+strings.Join(leaf_line, ", "))
+	}
+
+	// Render non-leaf children recursively
+	for i := range sub_tries {
+		tokens = append(tokens, sub_tries[i].render(indentation+"\t"))
+	}
+
+	return strings.Join(tokens, "\n")
+}
+
+func (t *topicNode) RenderTrie() string {
+	return t.render("") + "\n"
 }
