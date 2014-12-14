@@ -274,9 +274,6 @@ func (t *topicNode) Collapse() {
 	// A results in the cancellation of C.
 	if t.Name[0] != "." && len(t.Subscribers) == 0 && len(t.Children) == 1 {
 		child := t.Children[0]
-		t.Children[0] = nil
-		t.Children = t.Children[0:0]
-
 		t.Name = append(t.Name, child.Name...)
 		t.Subscribers = child.Subscribers
 		t.Children = child.Children
