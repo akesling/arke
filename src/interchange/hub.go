@@ -9,45 +9,10 @@ import (
 )
 
 const (
-	// Delimiter between topic elements.
-	topicDelimeter = "."
-
-	// Name of the Arke hub's root topic.
-	rootName = "."
-
 	// Number of dead subscribers per topic before we walk the subscriber list
 	// and collect the garbage.
 	collectionThreshold = 4
 )
-
-// A Message constitutes the information exchanged across an Arke hub.
-type Message struct {
-	Type   string
-	Source string
-	Meta   map[string][]byte
-	Body   []byte
-}
-
-type publication struct {
-	Topic   []string
-	Message Message
-}
-
-type subscription struct {
-	Topic    []string
-	Name     string
-	Deadline time.Time
-	Client   chan<- Message
-}
-
-// A subscriber is a handle to an entity subscribing on an Arke hub.
-type subscriber struct {
-	ctx    context.Context
-	Cancel context.CancelFunc
-	Done   <-chan struct{}
-	Name   string
-	Sink   chan<- Message
-}
 
 // A hub plays matchmaker between publishers and subscribers.
 //

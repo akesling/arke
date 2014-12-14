@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+const (
+	// Delimiter between topic elements.
+	topicDelimeter = "."
+
+	// Name of the Arke hub's root topic.
+	rootName = "."
+)
+
 func copyTopic(topic []string) []string {
 	cp := make([]string, len(topic))
 	copy(cp, topic)
@@ -21,7 +29,7 @@ func IsValidTopic(topic []string) bool {
 	for i := range topic {
 		token := topic[i]
 		switch token {
-		case "", ".":
+		case "", rootName:
 			return false
 		}
 	}
@@ -272,7 +280,7 @@ func (t *topicNode) Collapse() {
 	// preserved in the elision of an intervening descendant; e.g. the removal
 	// of B in A->B->C => A->C still preserves the property that cancellation of
 	// A results in the cancellation of C.
-	if t.Name[0] != "." && len(t.Subscribers) == 0 && len(t.Children) == 1 {
+	if t.Name[0] != rootName && len(t.Subscribers) == 0 && len(t.Children) == 1 {
 		child := t.Children[0]
 		t.Name = append(t.Name, child.Name...)
 		t.Subscribers = child.Subscribers
@@ -318,7 +326,7 @@ func (t *topicNode) Apply(parent *topicNode, f func(parent, child *topicNode)) {
 func (t *topicNode) render(indentation string) string {
 	var tokens []string
 
-	tokens = append(tokens, indentation+strings.Join(t.Name, ".")+".")
+	tokens = append(tokens, indentation+strings.Join(t.Name, topicDelimeter)+topicDelimeter)
 
 	// Partition children by "structural type"
 	var leaves []*topicNode
@@ -336,7 +344,7 @@ func (t *topicNode) render(indentation string) string {
 	if len(leaves) > 0 {
 		var leaf_line []string
 		for i := range leaves {
-			leaf_line = append(leaf_line, strings.Join(leaves[i].Name, "."))
+			leaf_line = append(leaf_line, strings.Join(leaves[i].Name, topicDelimeter))
 		}
 		tokens = append(tokens, indentation+"\t"+strings.Join(leaf_line, ", "))
 	}
