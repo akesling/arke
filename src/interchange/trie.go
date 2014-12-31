@@ -174,7 +174,7 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 // If this child already exists, it's considered a no-op and CreateChild
 // returns successfully with newTopic being the existing child.
 //
-// CreateChild has for resulting cases:
+// CreateChild has four resulting cases:
 // 1) Error on invalid subTopic
 // 2) Return existing topicNode
 // 3) Create new topicNode in the trie
@@ -208,9 +208,9 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 	parent := candidate
 	if len(overlap) > 0 {
 		// Overlap exists, so we must split the found candidate.
-		parent.Name = copyTopic(overlap)
 		ctx, cancel := context.WithCancel(parent.ctx)
-		new_child := newTopicNode(ctx, cancel, rest[len(overlap):])
+		new_child := newTopicNode(ctx, cancel, parent.Name[len(overlap):])
+		parent.Name = copyTopic(overlap)
 
 		new_child.Children = parent.Children
 		parent.Children = make([]*topicNode, 0, 10)
@@ -222,7 +222,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 	}
 
 	child_ctx, cancel_child := context.WithCancel(parent.ctx)
-	new_topic_node := newTopicNode(child_ctx, cancel_child, rest)
+	new_topic_node := newTopicNode(child_ctx, cancel_child, rest[len(overlap):])
 	parent.Children = append(parent.Children, new_topic_node)
 
 	return new_topic_node, nil

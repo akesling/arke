@@ -170,7 +170,7 @@ func TestCreateChild(t *testing.T) {
 	if err != nil {
 		t.Error("CreateChild returned error when topicNode creation was expected.")
 	}
-	if !reflect.DeepEqual(bar_baz.Name, []string{"bar", "baz"}) {
+	if !reflect.DeepEqual(bar_baz.Name, bar_baz_path) {
 		t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_baz_path))
 	}
 	if len(root.Children) != 1 {
@@ -199,7 +199,7 @@ func TestCreateChild(t *testing.T) {
 	if err != nil {
 		t.Error("CreateChild returned error when topicNode creation was expected.")
 	}
-	if !reflect.DeepEqual(bar_qux.Name, bar_qux_path) {
+	if !reflect.DeepEqual(bar_qux.Name, []string{"qux"}) {
 		t.Error(fmt.Sprintf("CreateChild returned child with incorrect name (%q) vs. expected (%q).", bar_baz.Name, bar_qux_path))
 	}
 	if len(root.Children) != 1 {
@@ -212,12 +212,10 @@ func TestCreateChild(t *testing.T) {
 		t.Error(fmt.Sprintf("CreateChild did not name the trie branch correctly.  Expected [\"bar\"] and got %q", root.Children[0].Name))
 		return
 	}
-	if bar_baz == root.Children[0].Children[0] && bar_qux == root.Children[0].Children[1] {
-		children := make([]topicNode, len(root.Children[0].Children))
-		for i := range root.Children[0].Children {
-			children[i] = *root.Children[0].Children[i]
-		}
-		t.Error(fmt.Sprintf("CreateChild incorrectly expanded the trie structure. Children of new branch are %+v", children))
+	if !reflect.DeepEqual(root.Children[0].Children[0].Name, []string{"baz"}) ||
+		!reflect.DeepEqual(root.Children[0].Children[1].Name, []string{"qux"}) {
+		t.Error("CreateChild incorrectly named the expanded child nodes. Expected baz and qux to be children of bar.")
+		t.Logf("Tree is now shaped thusly:\n%s", root.RenderTrie())
 	}
 }
 

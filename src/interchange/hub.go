@@ -43,7 +43,8 @@ func NewHub() *hub {
 	return h
 }
 
-func (h *hub) findTopic(topic []string) (*topicNode, error) {
+// findTopic takes a topic name and returns the topic or an error if not found.
+func (h *hub) findTopic(topic []string) (found *topicNode, err error) {
 	found, rest, _ := h.root.MaybeFindTopic(topic)
 
 	if len(rest) != 0 {
@@ -55,10 +56,12 @@ func (h *hub) findTopic(topic []string) (*topicNode, error) {
 	return found, nil
 }
 
-func (h *hub) findOrCreateTopic(topic []string) (*topicNode, error) {
+// findOrCreateTopic takes a topic name and returns or creates the topic.
+//
+// If creation fails, an error will be returned.
+func (h *hub) findOrCreateTopic(topic []string) (found *topicNode, err error) {
 	found, rest, _ := h.root.MaybeFindTopic(topic)
 
-	var err error
 	if len(rest) != 0 {
 		found, err = found.CreateChild(rest)
 	}
