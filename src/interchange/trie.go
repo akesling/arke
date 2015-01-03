@@ -136,7 +136,6 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 	overlap = []string{}
 
 	if t.Name[0] != rootName {
-		//fmt.Println("0::", t.Name, topic)
 		i := 0
 		for i < len(t.Name) && i < len(topic) {
 			if topic[i] != t.Name[i] {
@@ -157,8 +156,6 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 		return nearestTopic, []string{}, []string{}
 	}
 
-	//fmt.Println("1::", t.Name, topic, rest, overlap)
-
 	for i := range t.Children {
 		child := t.Children[i]
 
@@ -172,8 +169,6 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 						"Hub child has an empty name.\n Printout of Trie:\n%s", t.RenderTrie())))
 		}
 
-		//fmt.Println("1.5::", t.Name, child.Name, overlap)
-
 		if topic[len(overlap)] == child.Name[0] {
 			nearestTopic = child
 			rest = rest[len(overlap):]
@@ -186,15 +181,11 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 				}
 			}
 
-			//fmt.Println("2::", nearestTopic.Name, topic, rest, overlap)
-
 			// The current child's name has been consumed and we should look at
 			// its children to find more of our topic.
 			if len(rest)-len(overlap) != 0 {
-				//fmt.Println("3.1::", t.Name, nearestTopic.Name, topic, rest, overlap)
 				return nearestTopic.MaybeFindTopic(rest)
 			} else {
-				//fmt.Println("3.2::", t.Name, nearestTopic.Name, topic, rest, overlap)
 				return nearestTopic, []string{}, []string{}
 			}
 		}

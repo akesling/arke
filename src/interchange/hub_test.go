@@ -2,6 +2,7 @@ package interchange
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -53,13 +54,20 @@ func TestFindTopic(t *testing.T) {
 	h := NewHub()
 	topics := make([]*topicNode, len(grid))
 	for i := range grid {
+		_, err := h.findOrCreateTopic(grid[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// New retrieve nodes using the already tested findOrCreateTopic
+	// We can't save the node addresses above as they
+	// may shuffle around during construction.
+	for i := range grid {
 		current_topic, err := h.findOrCreateTopic(grid[i])
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		t.Logf("Creating topic %q\n", grid[i])
-		t.Logf("Tree structure is now:\n%s", h.root.RenderTrie())
 		topics[i] = current_topic
 	}
 
@@ -73,7 +81,7 @@ func TestFindTopic(t *testing.T) {
 			t.Error(err)
 		}
 
-		if expected_topic != actual_topic {
+		if expected_topic != actual_topic || !reflect.DeepEqual(expected_topic.Name, actual_topic.Name) {
 			t.Error(
 				fmt.Sprintf("For topic name %q, expected topic (%s) did not match actual topic found (%s).",
 					topic_name,
