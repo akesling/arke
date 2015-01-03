@@ -1,9 +1,11 @@
 package interchange
 
 import (
+	"code.google.com/p/go.net/context"
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestFindOrCreateTopic(t *testing.T) {
@@ -90,3 +92,54 @@ func TestFindTopic(t *testing.T) {
 		}
 	}
 }
+
+func benchmarkPublicationNTopicsMSubs(n, m int, b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	h := NewHub()
+	h.Start(ctx)
+	for i := 0; i < n; i++ {
+		topic := fmt.Sprintf("foo.%d", i)
+		for j := 0; j < m; j++ {
+			go func() {
+				sub, _ := h.Subscribe(fmt.Sprintf("%d", i), topic, time.Minute)
+				for m := range sub {
+					_ = m
+				}
+			}()
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h.Publish("foo", Message{
+			Body: []byte("foo"),
+		})
+	}
+
+	b.StopTimer()
+	cancel()
+}
+
+func benchmarkPublicationNSubs(n int, b *testing.B) {
+	benchmarkPublicationNTopicsMSubs(1, n, b)
+}
+
+func BenchmarkPublicationNoSubs(b *testing.B)     { benchmarkPublicationNSubs(0, b) }
+func BenchmarkPublicationOneSub(b *testing.B)     { benchmarkPublicationNSubs(1, b) }
+func BenchmarkPublication10Subs(b *testing.B)     { benchmarkPublicationNSubs(10, b) }
+func BenchmarkPublication100Subs(b *testing.B)    { benchmarkPublicationNSubs(100, b) }
+func BenchmarkPublication1000Subs(b *testing.B)   { benchmarkPublicationNSubs(1000, b) }
+func BenchmarkPublication10000Subs(b *testing.B)  { benchmarkPublicationNSubs(10000, b) }
+func BenchmarkPublication100000Subs(b *testing.B) { benchmarkPublicationNSubs(100000, b) }
+
+func benchmarkPublicationNTopics(n int, b *testing.B) {
+	benchmarkPublicationNTopicsMSubs(n, 1, b)
+}
+
+func BenchmarkPublicationNoTopics(b *testing.B)     { benchmarkPublicationNSubs(0, b) }
+func BenchmarkPublicationOneTopic(b *testing.B)     { benchmarkPublicationNSubs(1, b) }
+func BenchmarkPublication10Topics(b *testing.B)     { benchmarkPublicationNSubs(10, b) }
+func BenchmarkPublication100Topics(b *testing.B)    { benchmarkPublicationNSubs(100, b) }
+func BenchmarkPublication1000Topics(b *testing.B)   { benchmarkPublicationNSubs(1000, b) }
+func BenchmarkPublication10000Topics(b *testing.B)  { benchmarkPublicationNSubs(10000, b) }
+func BenchmarkPublication100000Topics(b *testing.B) { benchmarkPublicationNSubs(100000, b) }

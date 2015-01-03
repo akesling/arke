@@ -89,7 +89,7 @@ func (h *hub) Start(ctx context.Context) {
 						// messages... this currently isn't _actually_ enforced
 						// as one of these routines could errantly wait a little
 						// long in _some_ go implementation....  Currently this
-						// depends on undefined behavior in the the go runtime.
+						// depends on undefined behavior in the go runtime.
 						go func(s *subscriber) {
 							select {
 							case s.Sink <- newPub.Message:
@@ -130,7 +130,7 @@ func (h *hub) Start(ctx context.Context) {
 	}()
 }
 
-// Publish synchronously publishes the message on the given topic.
+// Publish synchronously issues a publication request on the given topic.
 //
 // Return does not imply actual delivery, only that the message is now queued
 // for all subscribers current as of return time.
@@ -139,6 +139,7 @@ func (h *hub) Start(ctx context.Context) {
 // will receive them in the order sent by a given client (e.g. publications
 // from multiple clients may be interleaved, but per-client ordering is
 // guaranteed).
+// TODO(akesling): Guarantee per-client ordering.
 func (h *hub) Publish(topic string, message Message) error {
 	h.pub <- &publication{
 		Topic:   strings.Split(topic, topicDelimeter),
@@ -154,7 +155,7 @@ func (h *hub) Publish(topic string, message Message) error {
 // subscription is now queued.  The subscription lease returned is the minimum
 // amount of time that this subscriber may be active... the subscription may
 // last longer than that time after Subscribe() invocation.
-func (h *hub) Subscribe(name, topic string, lease time.Duration) (chan<- Message, error) {
+func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message, error) {
 	deadline := time.Now().Add(lease)
 	comm := make(chan Message)
 	var expandedTopic []string
