@@ -258,6 +258,14 @@ func TestCreateChildRespectOwnName(t *testing.T) {
 	}
 }
 
+func TestCreateChildIncrementalBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	root := newTopicNode(ctx, cancel, []string{"."})
+
+	root.CreateChild([]string{"foo"})
+	root.CreateChild([]string{"foo", "bar"})
+}
+
 func TestReseatTopicNode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	root := newTopicNode(ctx, cancel, []string{"."})

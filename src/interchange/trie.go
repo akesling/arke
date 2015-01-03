@@ -233,14 +233,13 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 
 	// Sub-topic already exists -> return sub-topic
 	candidate, rest, overlap := t.MaybeFindTopic(subTopic)
-	//fmt.Printf("%q :: %q :: %q\n", subTopic, rest, overlap)
 	if len(rest) == 0 {
 		return candidate, nil
 	}
 
 	parent := candidate
-	if len(overlap) > 0 {
-		// Overlap exists, so we must split the found candidate.
+	if len(overlap) > 0 && len(overlap) < len(candidate.Name) {
+		// Partial overlap exists, so we must split the found candidate.
 		ctx, cancel := context.WithCancel(parent.ctx)
 		new_child := newTopicNode(ctx, cancel, parent.Name[len(overlap):])
 		parent.Name = copyTopic(overlap)
