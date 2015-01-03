@@ -117,15 +117,13 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) *subscrib
 // be the parent of the topic if it did exist.  This returned node may require
 // realigning its name, e.g. `rest` may be foo.bar.baz where the name of the
 // returned node is foo.bar.qux.
-
+//
 // In the failure case, rest will be the remainder of the name string that
 // wasn't found.
 //
 // Assumes `topic` is in canonical form (e.g. no empty elements or those of the
 // form of topicDelimeter except in the case of a root topic).
 // If a non-canonical topic is passed, no matching topic will be found.
-// XXX(akesling): Properly allow caller to understand whether we found a
-// "clean" parent or an overlapping "parent".
 func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, rest, overlap []string) {
 	if len(topic) < 1 || t == nil {
 		return t, []string{}, []string{}
@@ -134,8 +132,33 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 	// TODO(akesling): Reimplement this as something better than a
 	// linear search.
 	nearestTopic = t
-	head := topic[0]
 	rest = topic
+	overlap = []string{}
+
+	if t.Name[0] != rootName {
+		//fmt.Println("0::", t.Name, topic)
+		i := 0
+		for i < len(t.Name) && i < len(topic) {
+			if topic[i] != t.Name[i] {
+				break
+			}
+			i += 1
+		}
+		overlap = topic[:i]
+	} else if len(t.Name) > 1 {
+		// The root node must have a name of at most length 1.
+		panic(
+			errors.New(
+				fmt.Sprintf(
+					"Hub root has name longer than 1 component: %q", t.Name)))
+	}
+
+	if len(overlap) == len(topic) {
+		return nearestTopic, []string{}, []string{}
+	}
+
+	//fmt.Println("1::", t.Name, topic, rest, overlap)
+
 	for i := range t.Children {
 		child := t.Children[i]
 
@@ -143,32 +166,41 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 			// Empty names can wreak terrible havoc on all
 			// trie manipulations... thus this violates a
 			// core invariant and we should die accordingly.
-			panic(errors.New("Hub child has an empty name."))
+			panic(
+				errors.New(
+					fmt.Sprintf(
+						"Hub child has an empty name.\n Printout of Trie:\n%s", t.RenderTrie())))
 		}
 
-		if head == child.Name[0] {
-			nearestTopic = child
-			rest = topic[1:]
+		//fmt.Println("1.5::", t.Name, child.Name, overlap)
 
-			for i := 1; i < len(child.Name) && i < len(topic); i += 1 {
+		if topic[len(overlap)] == child.Name[0] {
+			nearestTopic = child
+			rest = rest[len(overlap):]
+			overlap = []string{child.Name[0]}
+
+			for i := 1; i < len(nearestTopic.Name) && i < len(rest); i += 1 {
 				// Names partially overlap
-				if topic[i] != child.Name[i] {
-					return nearestTopic, copyTopic(topic), copyTopic(topic[:i])
+				if rest[i] != nearestTopic.Name[i] {
+					return nearestTopic, copyTopic(rest), copyTopic(rest[:i])
 				}
-				rest = topic[i+1:]
 			}
+
+			//fmt.Println("2::", nearestTopic.Name, topic, rest, overlap)
 
 			// The current child's name has been consumed and we should look at
 			// its children to find more of our topic.
-			if len(rest) != 0 {
+			if len(rest)-len(overlap) != 0 {
+				//fmt.Println("3.1::", t.Name, nearestTopic.Name, topic, rest, overlap)
 				return nearestTopic.MaybeFindTopic(rest)
+			} else {
+				//fmt.Println("3.2::", t.Name, nearestTopic.Name, topic, rest, overlap)
+				return nearestTopic, []string{}, []string{}
 			}
-
-			break
 		}
 	}
 
-	return nearestTopic, copyTopic(rest), []string{}
+	return nearestTopic, copyTopic(rest), copyTopic(overlap)
 }
 
 // If this child already exists, it's considered a no-op and CreateChild
@@ -201,6 +233,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 
 	// Sub-topic already exists -> return sub-topic
 	candidate, rest, overlap := t.MaybeFindTopic(subTopic)
+	//fmt.Printf("%q :: %q :: %q\n", subTopic, rest, overlap)
 	if len(rest) == 0 {
 		return candidate, nil
 	}
@@ -250,15 +283,12 @@ func reseatTopicNode(parent, to_be_reseated *topicNode) {
 func (t *topicNode) Collapse() {
 	t.CollapseSubscribers()
 
+	// If no children, skip.
 	for i := 0; i < len(t.Children); i += 1 {
 		child := t.Children[i]
 		child.Collapse()
 
 		if len(child.Subscribers) == 0 && len(child.Children) == 0 {
-			if len(t.Children) == 0 {
-				break
-			}
-
 			last := uint(len(t.Children) - 1)
 
 			t.Children[i] = t.Children[last]
@@ -290,13 +320,10 @@ func (t *topicNode) Collapse() {
 
 func (t *topicNode) CollapseSubscribers() {
 	// Note: List length may change during iteration.
+	// If no subscribers, skip as we're completely collapsed.
 	for i := 0; i < len(t.Subscribers); i += 1 {
 		select {
 		case <-t.Subscribers[i].Done:
-			if len(t.Subscribers) == 0 {
-				break
-			}
-
 			var last uint
 			last = uint(len(t.Subscribers) - 1)
 

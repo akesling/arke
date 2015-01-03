@@ -149,8 +149,8 @@ func TestMaybeFindTopic(t *testing.T) {
 	path = []string{"foo", "bar", "baz"}
 	should_be_foo_bar, rest, overlap = root.MaybeFindTopic(path)
 	child_expectation(path, should_be_foo_bar, _foo_bar)
-	path_expectation(path, []string{"baz"}, rest)
-	path_expectation(path, []string{}, overlap)
+	path_expectation(path, []string{"bar", "baz"}, rest)
+	path_expectation(path, []string{"bar"}, overlap)
 
 	// Return rest with overlapping parent
 	/************************************/
@@ -159,6 +159,13 @@ func TestMaybeFindTopic(t *testing.T) {
 	child_expectation(path, should_be_qux__foo_bar, _qux__foo_bar)
 	path_expectation(path, []string{"foo", "baz"}, rest)
 	path_expectation(path, []string{"foo"}, overlap)
+
+	// Return correct node when path overlaps with non-root parent's Name
+	path = []string{"foo", "bar", "quuz"}
+	should_be_foo_bar, rest, overlap = _foo.MaybeFindTopic(path)
+	child_expectation(path, should_be_foo_bar, _foo_bar)
+	path_expectation(path, []string{"bar", "quuz"}, rest)
+	path_expectation(path, []string{"bar"}, overlap)
 }
 
 func TestCreateChild(t *testing.T) {
@@ -216,6 +223,38 @@ func TestCreateChild(t *testing.T) {
 		!reflect.DeepEqual(root.Children[0].Children[1].Name, []string{"qux"}) {
 		t.Error("CreateChild incorrectly named the expanded child nodes. Expected baz and qux to be children of bar.")
 		t.Logf("Tree is now shaped thusly:\n%s", root.RenderTrie())
+	}
+}
+
+func TestCreateChildRespectOwnName(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	root := newTopicNode(ctx, cancel, []string{"."})
+
+	foo_bar_baz_path := []string{"foo", "bar", "baz"}
+	foo_bar_baz, _ := root.CreateChild(foo_bar_baz_path)
+
+	foo_bar_qux_path := []string{"foo", "bar", "qux"}
+	_, err := foo_bar_baz.CreateChild(foo_bar_qux_path)
+	if err != nil {
+		t.Error("CreateChild returned error when topicNode creation was expected.")
+	}
+
+	if root.Children[0] != foo_bar_baz ||
+		!reflect.DeepEqual(root.Children[0].Name, []string{"foo", "bar"}) {
+		t.Log("Child split realignment acted incorrectly.")
+		t.Log("foo.bar.baz should now be foo.bar.")
+		t.Logf("Tree instead looks like:\n%s", root.RenderTrie())
+		t.Fail()
+	}
+
+	if len(root.Children[0].Children) != 2 ||
+		!reflect.DeepEqual(root.Children[0].Children[0].Name, []string{"baz"}) ||
+		!reflect.DeepEqual(root.Children[0].Children[1].Name, []string{"qux"}) {
+
+		t.Log("Child split did not produce the correct children.")
+		t.Log("Expected foo.bar to have children baz and qux")
+		t.Logf("Tree instead looks like:\n%s", root.RenderTrie())
+		t.Fail()
 	}
 }
 
