@@ -3,6 +3,7 @@ package interchange
 import (
 	"code.google.com/p/go.net/context"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 	"time"
@@ -143,3 +144,43 @@ func BenchmarkPublication100Topics(b *testing.B)    { benchmarkPublicationNSubs(
 func BenchmarkPublication1000Topics(b *testing.B)   { benchmarkPublicationNSubs(1000, b) }
 func BenchmarkPublication10000Topics(b *testing.B)  { benchmarkPublicationNSubs(10000, b) }
 func BenchmarkPublication100000Topics(b *testing.B) { benchmarkPublicationNSubs(100000, b) }
+
+func benchmarkPublicationToRandomOfNTopics(n int, b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	h := NewHub()
+	h.Start(ctx)
+	for i := 0; i < n; i++ {
+		topic := fmt.Sprintf("foo.%d", i)
+		for j := 0; j < 1; j++ {
+			go func() {
+				sub, _ := h.Subscribe(fmt.Sprintf("%d", i), topic, time.Minute)
+				for m := range sub {
+					_ = m
+				}
+			}()
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		topic := fmt.Sprintf("foo.%d", rand.Intn(n))
+		h.Publish(topic, Message{
+			Body: []byte("foo"),
+		})
+	}
+
+	b.StopTimer()
+	cancel()
+}
+
+func BenchmarkPublicationRandom10Topics(b *testing.B)  { benchmarkPublicationToRandomOfNTopics(10, b) }
+func BenchmarkPublicationRandom100Topics(b *testing.B) { benchmarkPublicationToRandomOfNTopics(100, b) }
+func BenchmarkPublicationRandom1000Topics(b *testing.B) {
+	benchmarkPublicationToRandomOfNTopics(1000, b)
+}
+func BenchmarkPublicationRandom10000Topics(b *testing.B) {
+	benchmarkPublicationToRandomOfNTopics(10000, b)
+}
+func BenchmarkPublicationRandom100000Topics(b *testing.B) {
+	benchmarkPublicationToRandomOfNTopics(100000, b)
+}
