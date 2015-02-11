@@ -32,7 +32,7 @@ func TestIsValidTopic(t *testing.T) {
 
 func TestAddSub(t *testing.T) {
 	root_ctx, cancel_root := context.WithCancel(context.Background())
-	root := newTopicNode(root_ctx, cancel_root, []string{"."})
+	root := newTopicNode(root_ctx, cancel_root, []string{rootName})
 
 	topic := []string{"foo", "bar"}
 	new_node, _ := root.CreateChild(topic)
@@ -49,14 +49,15 @@ func TestAddSub(t *testing.T) {
 
 	for i := 0; i < 10; i += 1 {
 		message_sent := Message{Source: fmt.Sprintf("test_%d", i)}
-		new_subscriber.Sink <- message_sent
+		new_subscriber.Send(&message_sent)
 
 		select {
 		case message_received := <-client_messages:
 			if !reflect.DeepEqual(message_sent, message_received) {
 				t.Error(fmt.Sprintf("(%d): Message received (%+v) did not match message expected (%+v)", i, message_received, message_sent))
 			}
-		default:
+		// Wait for messages to actually get a chance to be scheduled.
+		case <-time.After(time.Duration(4) * time.Second):
 			t.Error(fmt.Sprintf("(%d): Expected message never received from subscriber", i))
 		}
 	}
@@ -313,9 +314,9 @@ func TestReseatTopicNode(t *testing.T) {
 	select {
 	case <-foo_bar_baz.ctx.Done():
 		t.Error("foo_bar_baz's context was improperly reseated")
-	case <-foo_bar_baz.Subscribers[0].Done:
+	case <-foo_bar_baz.Subscribers[0].Done():
 		t.Error("foo_bar_baz's first subscriber's context was improperly reseated")
-	case <-foo_bar_baz.Subscribers[1].Done:
+	case <-foo_bar_baz.Subscribers[1].Done():
 		t.Error("foo_bar_baz's first subscriber's context was improperly reseated")
 	default:
 	}
@@ -324,8 +325,8 @@ func TestReseatTopicNode(t *testing.T) {
 	for _ = range []int{0, 1, 2} {
 		select {
 		case <-foo_bar_baz.ctx.Done():
-		case <-foo_bar_baz.Subscribers[0].Done:
-		case <-foo_bar_baz.Subscribers[1].Done:
+		case <-foo_bar_baz.Subscribers[0].Done():
+		case <-foo_bar_baz.Subscribers[1].Done():
 		default:
 			t.Error("foo_bar_baz or its subscribers were improperly reseated")
 		}

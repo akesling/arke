@@ -27,23 +27,38 @@ type subscription struct {
 
 // A subscriber is a handle to an entity subscribing on an Arke hub.
 type subscriber struct {
-	ctx    context.Context
-	Cancel context.CancelFunc
-	Done   <-chan struct{}
-	Name   string
-	Sink   chan<- Message
+	ctx  context.Context
+	Name string
+	sink chan<- Message
+}
+
+func CreateSubscriber(sub *subscription, ctx context.Context) *subscriber {
+	comm := make(chan Message)
+
+	go func(ctx context.Context, source <-chan Message) {
+	event_loop:
+		for {
+			select {
+			case message := <-source:
+				sub.Client <- message
+			case <-ctx.Done():
+				close(sub.Client)
+				break event_loop
+			}
+		}
+	}(ctx, comm)
+
+	return &subscriber{
+		ctx:  ctx,
+		Name: sub.Name,
+		sink: comm,
+	}
+}
+
+func (s *subscriber) Done() <-chan struct{} {
+	return s.ctx.Done()
 }
 
 func (s *subscriber) Send(message *Message) {
-	// TODO(akesling): Assure strict ordering of sent
-	// messages... this currently isn't _actually_ enforced
-	// as one of these routines could errantly wait a little
-	// long in _some_ go implementation....  Currently this
-	// depends on undefined behavior in the go runtime.
-	go func(sub *subscriber) {
-		select {
-		case sub.Sink <- *message:
-		case <-sub.Done:
-		}
-	}(s)
+	s.sink <- *message
 }

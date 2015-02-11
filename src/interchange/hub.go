@@ -85,17 +85,7 @@ func (h *hub) Start(ctx context.Context) {
 
 				topic.Apply(nil, func(_, t *topicNode) {
 					for i := range t.Subscribers {
-						// TODO(akesling): Assure strict ordering of sent
-						// messages... this currently isn't _actually_ enforced
-						// as one of these routines could errantly wait a little
-						// long in _some_ go implementation....  Currently this
-						// depends on undefined behavior in the go runtime.
-						go func(s *subscriber) {
-							select {
-							case s.Sink <- newPub.Message:
-							case <-s.Done:
-							}
-						}(t.Subscribers[i])
+						t.Subscribers[i].Send(&newPub.Message)
 					}
 				})
 			case newSub := <-h.sub:
@@ -139,7 +129,6 @@ func (h *hub) Start(ctx context.Context) {
 // will receive them in the order sent by a given client (e.g. publications
 // from multiple clients may be interleaved, but per-client ordering is
 // guaranteed).
-// TODO(akesling): Guarantee per-client ordering.
 func (h *hub) Publish(topic string, message Message) error {
 	h.pub <- &publication{
 		Topic:   strings.Split(topic, topicDelimeter),
@@ -166,6 +155,7 @@ func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message
 		expandedTopic = strings.Split(topic, topicDelimeter)
 	}
 
+	// Order of subscription doesn't matter.
 	go func() {
 		h.sub <- &subscription{
 			Topic:    expandedTopic,

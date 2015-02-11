@@ -75,21 +75,9 @@ func newTopicNode(ctx context.Context, cancel context.CancelFunc, name []string)
 //  sub: The subscription from which to build the new Subscriber
 //  cleanup: The channel via which the subscriber's 'death' will notify the hub.
 func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) *subscriber {
-	ctx, cancel := context.WithDeadline(t.ctx, sub.Deadline)
-	comm := make(chan Message)
+	ctx, _ := context.WithDeadline(t.ctx, sub.Deadline)
 
-	go func(ctx context.Context, source <-chan Message) {
-	event_loop:
-		for {
-			select {
-			case message := <-source:
-				sub.Client <- message
-			case <-ctx.Done():
-				close(sub.Client)
-				break event_loop
-			}
-		}
-	}(ctx, comm)
+	new_subscriber := CreateSubscriber(sub, ctx)
 
 	// When the subscriber is done, notify the hub for garbage collection.
 	go func(topic []string, notify chan<- []string) {
@@ -97,13 +85,6 @@ func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) *subscrib
 		notify <- topic
 	}(sub.Topic, cleanup)
 
-	new_subscriber := &subscriber{
-		ctx:    ctx,
-		Cancel: cancel,
-		Done:   ctx.Done(),
-		Name:   sub.Name,
-		Sink:   comm,
-	}
 	t.Subscribers = append(t.Subscribers, new_subscriber)
 
 	return new_subscriber
@@ -259,8 +240,7 @@ func reseatTopicNode(parent, to_be_reseated *topicNode) {
 		for i := range child.Subscribers {
 			sub := child.Subscribers[i]
 			deadline, _ := sub.ctx.Deadline()
-			sub.ctx, sub.Cancel = context.WithDeadline(child.ctx, deadline)
-			sub.Done = sub.ctx.Done()
+			sub.ctx, _ = context.WithDeadline(child.ctx, deadline)
 		}
 	})
 }
@@ -313,7 +293,7 @@ func (t *topicNode) CollapseSubscribers() {
 	// If no subscribers, skip as we're completely collapsed.
 	for i := 0; i < len(t.Subscribers); i += 1 {
 		select {
-		case <-t.Subscribers[i].Done:
+		case <-t.Subscribers[i].Done():
 			var last uint
 			last = uint(len(t.Subscribers) - 1)
 
