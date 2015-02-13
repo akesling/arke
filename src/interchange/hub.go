@@ -28,18 +28,17 @@ type hub struct {
 }
 
 // NewHub builds a hub.
-func NewHub() *hub {
-	ctx, cancel := context.WithCancel(context.Background())
-
+func NewHub(ctx context.Context, cancel context.CancelFunc) *hub {
 	new_root := newTopicNode(ctx, cancel, []string{rootName})
 
 	h := &hub{
-		root: new_root,
-		pub:  make(chan *publication),
-		sub:  make(chan *subscription),
+		root:    new_root,
+		pub:     make(chan *publication),
+		sub:     make(chan *subscription),
+		cleanup: make(chan []string),
 	}
 
-	h.Start(ctx)
+	h.start()
 	return h
 }
 
@@ -69,7 +68,7 @@ func (h *hub) findOrCreateTopic(topic []string) (found *topicNode, err error) {
 	return found, err
 }
 
-func (h *hub) Start(ctx context.Context) {
+func (h *hub) start() {
 	go func() {
 		// LET THE EVENTS BEGIN!
 	event_loop:
@@ -113,7 +112,7 @@ func (h *hub) Start(ctx context.Context) {
 						tNode.deadSubs = 0
 					}
 				}
-			case <-ctx.Done():
+			case <-h.root.ctx.Done():
 				break event_loop
 			}
 		}
@@ -155,15 +154,12 @@ func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message
 		expandedTopic = strings.Split(topic, topicDelimeter)
 	}
 
-	// Order of subscription doesn't matter.
-	go func() {
-		h.sub <- &subscription{
-			Topic:    expandedTopic,
-			Name:     name,
-			Deadline: deadline,
-			Client:   comm,
-		}
-	}()
+	h.sub <- &subscription{
+		Topic:    expandedTopic,
+		Name:     name,
+		Deadline: deadline,
+		Client:   comm,
+	}
 
 	return comm, nil
 }

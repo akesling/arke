@@ -17,7 +17,8 @@ func TestFindOrCreateTopic(t *testing.T) {
 		[]string{"baz"},
 	}
 
-	h := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	h := NewHub(ctx, cancel)
 
 	for i := range grid {
 		topic_name := grid[i]
@@ -54,10 +55,11 @@ func TestFindTopic(t *testing.T) {
 	}
 
 	// Build trie
-	h := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	hub := NewHub(ctx, cancel)
 	topics := make([]*topicNode, len(grid))
 	for i := range grid {
-		_, err := h.findOrCreateTopic(grid[i])
+		_, err := hub.findOrCreateTopic(grid[i])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +69,7 @@ func TestFindTopic(t *testing.T) {
 	// We can't save the node addresses above as they
 	// may shuffle around during construction.
 	for i := range grid {
-		current_topic, err := h.findOrCreateTopic(grid[i])
+		current_topic, err := hub.findOrCreateTopic(grid[i])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +80,7 @@ func TestFindTopic(t *testing.T) {
 	for i := range grid {
 		topic_name := grid[i]
 		expected_topic := topics[i]
-		actual_topic, err := h.findTopic(topic_name)
+		actual_topic, err := hub.findTopic(topic_name)
 
 		if err != nil {
 			t.Error(err)
@@ -94,10 +96,91 @@ func TestFindTopic(t *testing.T) {
 	}
 }
 
+func TestPubSubWorks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hub := NewHub(ctx, cancel)
+
+	source, err := hub.Subscribe("I'm a subscriber!", "foo.bar.baz", time.Duration(1)*time.Minute)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	my_message := Message{Body: []byte("foo")}
+	go func() {
+		err = hub.Publish("foo.bar", my_message)
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+	}()
+
+	select {
+	case msg := <-source:
+		if string(msg.Body) != string(my_message.Body) {
+			t.Error(fmt.Sprintf("Message received (%s) was not the one sent (%s)", msg.Body, my_message.Body))
+			t.FailNow()
+		}
+	case <-time.After(time.Duration(4) * time.Second):
+		t.Error("Message was never received")
+		t.FailNow()
+	}
+}
+
+func TestHubCancelationClosesSubscription(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hub := NewHub(ctx, cancel)
+
+	source, err := hub.Subscribe("I'm a subscriber!", "foo.bar.baz", time.Duration(1)*time.Minute)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	cancel()
+	select {
+	case _, ok := <-source:
+		if ok {
+			t.Error("Subscriber channel should no longer be open.")
+		}
+	case <-time.After(time.Duration(4) * time.Second):
+		t.Error("Timed out (4s) waiting for cancel() to propagate to subscriber.")
+		select {
+		case <-ctx.Done():
+		default:
+			t.Error("Context has not yet been marked as Done().")
+		}
+	}
+}
+
+func TestSubscriptionCancelationSendsCleanupNotification(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hub := NewHub(ctx, cancel)
+
+	_, err := hub.Subscribe("I'm a subscriber!", "foo.bar.baz", time.Duration(1)*time.Millisecond)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	deadline := time.After(time.Duration(4) * time.Second)
+loop:
+	for {
+		select {
+		case <-time.After(time.Duration(10) * time.Millisecond):
+			if hub.root.Children[0].deadSubs == 1 {
+				break loop
+			}
+		case <-deadline:
+			t.Error("Timed out (4s) waiting for hub to receive subscriber death notification.")
+			break loop
+		}
+	}
+}
+
 func benchmarkPublicationNTopicsMSubs(n, m int, b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
-	h := NewHub()
-	h.Start(ctx)
+	h := NewHub(ctx, cancel)
 	for i := 0; i < n; i++ {
 		topic := fmt.Sprintf("foo.%d", i)
 		for j := 0; j < m; j++ {
@@ -147,8 +230,7 @@ func BenchmarkPublication100000Topics(b *testing.B) { benchmarkPublicationNSubs(
 
 func benchmarkPublicationToRandomOfNTopics(n int, b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
-	h := NewHub()
-	h.Start(ctx)
+	h := NewHub(ctx, cancel)
 	for i := 0; i < n; i++ {
 		topic := fmt.Sprintf("foo.%d", i)
 		for j := 0; j < 1; j++ {
