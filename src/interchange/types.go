@@ -33,7 +33,7 @@ type subscriber struct {
 }
 
 func CreateSubscriber(sub *subscription, ctx context.Context) *subscriber {
-	comm := make(chan Message)
+	comm := make(chan Message, subscriberBufferSize)
 
 	new_subscriber := &subscriber{
 		ctx:  ctx,

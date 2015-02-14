@@ -137,19 +137,22 @@ func TestHubCancelationClosesSubscription(t *testing.T) {
 		t.FailNow()
 	}
 
+	// XXX(akesling): There exists a race condition here between
+	// cancelation and subscription, making this test rather flaky
+	// (and the code under testincorrect).
 	cancel()
 	select {
-	case _, ok := <-source:
-		if ok {
-			t.Error("Subscriber channel should no longer be open.")
+	case <-ctx.Done():
+		select {
+		case _, ok := <-source:
+			if ok {
+				t.Error("Subscriber channel should no longer be open.")
+			}
+		case <-time.After(time.Duration(4) * time.Second):
+			t.Error("Timed out (4s) waiting for cancel() to propagate to subscriber.")
 		}
 	case <-time.After(time.Duration(4) * time.Second):
-		t.Error("Timed out (4s) waiting for cancel() to propagate to subscriber.")
-		select {
-		case <-ctx.Done():
-		default:
-			t.Error("Context has not yet been marked as Done().")
-		}
+		t.Error("Timed out (4s) waiting for context to be marked as Done().")
 	}
 }
 

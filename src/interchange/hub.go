@@ -12,6 +12,9 @@ const (
 	// Number of dead subscribers per topic before we walk the subscriber list
 	// and collect the garbage.
 	collectionThreshold = 4
+
+	subscriberBufferSize = 100
+	hubBufferSize        = 100
 )
 
 // A hub plays matchmaker between publishers and subscribers.
@@ -33,9 +36,9 @@ func NewHub(ctx context.Context, cancel context.CancelFunc) *hub {
 
 	h := &hub{
 		root:    new_root,
-		pub:     make(chan *publication),
-		sub:     make(chan *subscription),
-		cleanup: make(chan []string),
+		pub:     make(chan *publication, hubBufferSize),
+		sub:     make(chan *subscription, hubBufferSize),
+		cleanup: make(chan []string, hubBufferSize),
 	}
 
 	h.start()
