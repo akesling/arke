@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go.net/context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -69,6 +70,14 @@ func newTopicNode(ctx context.Context, cancel context.CancelFunc, name []string)
 	}
 }
 
+type ByName []*topicNode
+
+func (n ByName) Len() int      { return len(n) }
+func (n ByName) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
+func (n ByName) Less(i, j int) bool {
+	return strings.Join(n[i].Name, ".") < strings.Join(n[j].Name, ".")
+}
+
 // AddSub creates a subscriber, attaches it to this topicNode and starts it.
 //
 // Parameters:
@@ -110,12 +119,11 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 		return t, []string{}, []string{}
 	}
 
-	// TODO(akesling): Reimplement this as something better than a
-	// linear search.
 	nearestTopic = t
 	rest = topic
 	overlap = []string{}
 
+	// Determine overlap between provided topic and t.Name
 	if t.Name[0] != rootName {
 		i := 0
 		for i < len(t.Name) && i < len(topic) {
@@ -133,27 +141,22 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 					"Hub root has name longer than 1 component: %q", t.Name)))
 	}
 
+	// If the provided topic is _us_, return.
 	if len(overlap) == len(topic) {
 		return nearestTopic, []string{}, []string{}
 	}
 
-	for i := range t.Children {
-		child := t.Children[i]
-
-		if len(child.Name) < 1 {
-			// Empty names can wreak terrible havoc on all
-			// trie manipulations... thus this violates a
-			// core invariant and we should die accordingly.
-			panic(
-				errors.New(
-					fmt.Sprintf(
-						"Hub child has an empty name.\n Printout of Trie:\n%s", t.RenderTrie())))
-		}
-
-		if topic[len(overlap)] == child.Name[0] {
-			nearestTopic = child
+	// Even after discounting t.Name, topic has components not consumed
+	// Search in t.Children.
+	index := sort.Search(
+		len(t.Children),
+		func(i int) bool { return t.Children[i].Name[0] >= topic[len(overlap)] })
+	if index < len(t.Children) {
+		candidate := t.Children[index]
+		if candidate.Name[0] == topic[len(overlap)] {
+			nearestTopic = candidate
 			rest = rest[len(overlap):]
-			overlap = []string{child.Name[0]}
+			overlap = []string{candidate.Name[0]}
 
 			for i := 1; i < len(nearestTopic.Name) && i < len(rest); i += 1 {
 				// Names partially overlap
@@ -175,22 +178,24 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 	return nearestTopic, copyTopic(rest), copyTopic(overlap)
 }
 
+// CreateChild ensures there exists a topicNode at subTopic in the topic trie.
+//
 // If this child already exists, it's considered a no-op and CreateChild
 // returns successfully with newTopic being the existing child.
 //
 // CreateChild has four resulting cases:
 // 1) Error on invalid subTopic
 // 2) Return existing topicNode
-// 3) Create new topicNode in the trie
-// 4) Modify trie structure in the process of 2 or 3
+// 3) Create new topicNode without modifying the trie
+// 4) Modify the trie structure and then create a new topicNode
 //
 // Case 4 happens when we have an existing node with an overlapping run from our
 // desired new topic name.  E.g. we have a foo.bar.baz node in the trie but we
 // want to create a node foo.bar.qux.  In this case, we must create a foo.bar
 // node with foo.bar.baz being renamed baz and assigned as a child of foo.bar.
-// This requires rebinding a new context for baz and its subscribers and
-// children that derives from the new foo.bar.  We then add a qux node that derives
-// from foo.bar.
+// This requires rebinding a new context that derives from the new foo.bar for
+// baz, its subscribers, and the subtrie beneath baz.
+// We then add a qux node that derives from foo.bar.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
 	if !IsValidTopic(subTopic) {
 		return nil, errors.New(fmt.Sprintf(
@@ -228,6 +233,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 	child_ctx, cancel_child := context.WithCancel(parent.ctx)
 	new_topic_node := newTopicNode(child_ctx, cancel_child, rest[len(overlap):])
 	parent.Children = append(parent.Children, new_topic_node)
+	sort.Sort(ByName(parent.Children))
 
 	return new_topic_node, nil
 }
@@ -286,6 +292,9 @@ func (t *topicNode) Collapse() {
 		t.Subscribers = child.Subscribers
 		t.Children = child.Children
 	}
+
+	// Sort order must be preserved for topic finding to work efficiently.
+	sort.Sort(ByName(t.Children))
 }
 
 func (t *topicNode) CollapseSubscribers() {

@@ -269,7 +269,7 @@ func TestCreateChildIncrementalBuild(t *testing.T) {
 	root.CreateChild([]string{"foo", "quuz"})
 	root.CreateChild([]string{"foo", "bar", "baz", "qux"})
 
-	expected_trie := "..\n\tfoo.\n\t\tqux, quuz\n\t\tbar.\n\t\t\tbaz.qux\n"
+	expected_trie := "..\n\tfoo.\n\t\tquuz, qux\n\t\tbar.\n\t\t\tbaz.qux\n"
 	actual_trie := root.RenderTrie()
 	if expected_trie != actual_trie {
 		t.Error(fmt.Sprintf("Trie rendering did not meet expectation.\nExpected:\n%s\nActual:\n%s", expected_trie, actual_trie))
