@@ -16,10 +16,10 @@ func TestIsValidTopic(t *testing.T) {
 	}
 
 	expect_valid := func(topic []string) {
-		expect_true(IsValidTopic(topic), fmt.Sprintf("Should have been valid: %q", topic))
+		expect_true(isValidTopic(topic), fmt.Sprintf("Should have been valid: %q", topic))
 	}
 	expect_not_valid := func(topic []string) {
-		expect_true(!IsValidTopic(topic), fmt.Sprintf("Should _not_ have been valid: %q", topic))
+		expect_true(!isValidTopic(topic), fmt.Sprintf("Should _not_ have been valid: %q", topic))
 	}
 
 	expect_valid([]string{"foo"})

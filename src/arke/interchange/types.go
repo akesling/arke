@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// A Message constitutes the information exchanged across an Arke hub.
+// Message constitutes the information exchanged across an Arke hub.
 type Message struct {
 	Type   string
 	Source string
@@ -13,11 +13,13 @@ type Message struct {
 	Body   []byte
 }
 
+// publication purveys information for routing a given message.
 type publication struct {
 	Topic   []string
 	Message Message
 }
 
+// subscription purveys information for assembling a valid subscriber.
 type subscription struct {
 	Topic    []string
 	Name     string
@@ -25,14 +27,16 @@ type subscription struct {
 	Client   chan<- Message
 }
 
-// A subscriber is a handle to an entity subscribing on an Arke hub.
+// subscriber is a handle to an entity subscribing on an Arke hub.
 type subscriber struct {
 	ctx  context.Context
 	Name string
 	sink chan<- Message
 }
 
-func CreateSubscriber(sub *subscription, ctx context.Context) *subscriber {
+// createSubscriber constructs a subscriber handle from a subscription and
+// context.
+func createSubscriber(sub *subscription, ctx context.Context) *subscriber {
 	comm := make(chan Message, subscriberBufferSize)
 
 	new_subscriber := &subscriber{
@@ -57,10 +61,13 @@ func CreateSubscriber(sub *subscription, ctx context.Context) *subscriber {
 	return new_subscriber
 }
 
+// Done returns a channel indicating whether the given subscriber has lost its
+// lease.
 func (s *subscriber) Done() <-chan struct{} {
 	return s.ctx.Done()
 }
 
+// Send handles hygienic passing of messages to a subscriber.
 func (s *subscriber) Send(message *Message) {
 	select {
 	case s.sink <- *message:

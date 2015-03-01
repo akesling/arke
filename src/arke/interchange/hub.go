@@ -1,3 +1,8 @@
+// interchange defines the core functionality of an Arke hub.
+//
+// It provides an API for creating a new hub, publishing and subscribing, as
+// well as appropriate interfaces for implementing transparent hub Client
+// wrapper types.
 package interchange
 
 import (
@@ -30,7 +35,7 @@ type hub struct {
 	cleanup chan []string
 }
 
-// NewHub builds a hub.
+// NewHub builds an Arke hub.
 func NewHub(ctx context.Context, cancel context.CancelFunc) *hub {
 	new_root := newTopicNode(ctx, cancel, []string{rootName})
 
@@ -168,7 +173,7 @@ func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message
 }
 
 // NewClient creates a new Client for the given hub.
-func (h *hub) NewClient() *Client {
+func NewClient(h *hub) *Client {
 	temp := Client(h)
 	return &temp
 }

@@ -22,7 +22,8 @@ func copyTopic(topic []string) []string {
 	return cp
 }
 
-func IsValidTopic(topic []string) bool {
+// isValidTopic determines whether the provided topic array is valid.
+func isValidTopic(topic []string) bool {
 	if len(topic) == 0 {
 		return false
 	}
@@ -70,11 +71,11 @@ func newTopicNode(ctx context.Context, cancel context.CancelFunc, name []string)
 	}
 }
 
-type ByName []*topicNode
+type byName []*topicNode
 
-func (n ByName) Len() int      { return len(n) }
-func (n ByName) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
-func (n ByName) Less(i, j int) bool {
+func (n byName) Len() int      { return len(n) }
+func (n byName) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
+func (n byName) Less(i, j int) bool {
 	return strings.Join(n[i].Name, ".") < strings.Join(n[j].Name, ".")
 }
 
@@ -86,7 +87,7 @@ func (n ByName) Less(i, j int) bool {
 func (t *topicNode) AddSub(sub *subscription, cleanup chan<- []string) *subscriber {
 	ctx, _ := context.WithDeadline(t.ctx, sub.Deadline)
 
-	new_subscriber := CreateSubscriber(sub, ctx)
+	new_subscriber := createSubscriber(sub, ctx)
 
 	// When the subscriber is done, notify the hub for garbage collection.
 	go func(topic []string, notify chan<- []string) {
@@ -197,7 +198,7 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 // baz, its subscribers, and the subtrie beneath baz.
 // We then add a qux node that derives from foo.bar.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
-	if !IsValidTopic(subTopic) {
+	if !isValidTopic(subTopic) {
 		return nil, errors.New(fmt.Sprintf(
 			"Malformed topicName (%s) provided to CreateChild of topicNode (%s)",
 			subTopic, t.Name))
@@ -233,7 +234,7 @@ func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err err
 	child_ctx, cancel_child := context.WithCancel(parent.ctx)
 	new_topic_node := newTopicNode(child_ctx, cancel_child, rest[len(overlap):])
 	parent.Children = append(parent.Children, new_topic_node)
-	sort.Sort(ByName(parent.Children))
+	sort.Sort(byName(parent.Children))
 
 	return new_topic_node, nil
 }
@@ -294,7 +295,7 @@ func (t *topicNode) Collapse() {
 	}
 
 	// Sort order must be preserved for topic finding to work efficiently.
-	sort.Sort(ByName(t.Children))
+	sort.Sort(byName(t.Children))
 }
 
 func (t *topicNode) CollapseSubscribers() {

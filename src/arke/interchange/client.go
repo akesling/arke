@@ -14,7 +14,7 @@ type Subscriber interface {
 	Subscribe(name, topic string, lease time.Duration) (<-chan Message, error)
 }
 
-// Client allows publication and subscription to/from an Arke hub.
+// Client allows publication and subscription to an Arke hub.
 type Client interface {
 	Publisher
 	Subscriber
