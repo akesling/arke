@@ -106,7 +106,7 @@ func TestPubSubWorks(t *testing.T) {
 		t.FailNow()
 	}
 
-	my_message := Message{Body: []byte("foo")}
+	my_message := Message{Body: "foo"}
 	go func() {
 		err = hub.Publish("foo.bar", my_message)
 		if err != nil {
@@ -117,7 +117,7 @@ func TestPubSubWorks(t *testing.T) {
 
 	select {
 	case msg := <-source:
-		if string(msg.Body) != string(my_message.Body) {
+		if msg.Body.(string) != my_message.Body.(string) {
 			t.Error(fmt.Sprintf("Message received (%s) was not the one sent (%s)", msg.Body, my_message.Body))
 			t.FailNow()
 		}
@@ -127,7 +127,7 @@ func TestPubSubWorks(t *testing.T) {
 	}
 }
 
-func TestHubCancelationClosesSubscription(t *testing.T) {
+func TestHubCancellationClosesSubscription(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	hub := NewHub(ctx, cancel)
 
@@ -250,7 +250,7 @@ func benchmarkPublicationToRandomOfNTopics(n int, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		topic := fmt.Sprintf("foo.%d", rand.Intn(n))
 		h.Publish(topic, Message{
-			Body: []byte("foo"),
+			Body: "foo",
 		})
 	}
 

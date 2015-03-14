@@ -1,20 +1,24 @@
 package main
 
 import (
-    "arke/interchange"
-    "arke/endpoint/rest"
-    "arke/endpoint/codex"
-    "log"
+	"arke/endpoint/codex"
+	"arke/endpoint/httprest"
+	"arke/interchange"
+	"code.google.com/p/go.net/context"
+	"log"
 )
 
 func main() {
-    hub := interchange.NewHub()
-    endpoint := rest.NewEndpoint(hub.NewClient(), codex.NewJSON(), port)
+	hub_ctx, cancel_hub := context.WithCancel(context.Background())
+	hub := interchange.NewHub(hub_ctx)
+	endpoint := rest.NewEndpoint(hub.NewClient(), codex.NewJSON())
 
-    future, err := endpoint.Start()
-    if err != nil {
-        log.Fatal(err)
-    }
+	port := "8080"
+	endpoint_done, err := endpoint.Start(port)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    <-future
+	<-endpoint_done
+	cancel_hub()
 }

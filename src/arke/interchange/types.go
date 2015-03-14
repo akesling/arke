@@ -9,8 +9,8 @@ import (
 type Message struct {
 	Type   string
 	Source string
-	Meta   map[string][]byte
-	Body   []byte
+	Meta   map[string]string
+	Body   interface{}
 }
 
 // publication purveys information for routing a given message.
