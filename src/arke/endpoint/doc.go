@@ -1,4 +1,7 @@
 /*
+Package arke/endpoint contains Arke transport components including server and
+client implementations.
+
 # Transports
 
 ## HTTP REST Endpoint
