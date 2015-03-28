@@ -54,19 +54,41 @@ func constrainLease(requestedLease time.Duration) time.Duration {
 	}
 }
 
+func decodeTopicURLPath(path string) (topic string) {
+	tokens := strings.Split("/", path)
+	for i := range tokens {
+		tokens[i] = url.QueryUnescape(tokens[i])
+	}
+	topic = strings.Join(".", tokens)
+}
+
 func NewEndpoint(hub, codex) *Endpoint {
 	endpoint := &httprest{hub, http.NewServeMux(), http.codex}
 
 	endpoint.Mux.HandleFunc("subscriptions", func(writer http.ResponseWriter, request *http.Request) {
 		switch request.Method {
 		case POST:
-			// TODO(akesling): extract topic from URL, subscriberURL (which is
-			// the URL to which we respond) and lease from the body.
-			var topic string
-			var subscriberURL string
-			var requestedLease time.Duration
+			topic := decodeTopicURLPath(request.Opaque)
 
-			actualLease := constrainLease(requestedLease)
+			requestFields, err := codex.Decode(request.Body)
+			if err != nil || !requestFields.(map[string]string) {
+				rw.WriteHeader(http.StatusMalformed)
+				return
+			}
+
+			var subscriberURL string
+			if subscriberURL, ok := requestFields["address"]; !ok {
+				rw.WriteHeader(http.StatusMalformed)
+				return
+			}
+
+			var requestedLease string
+			if requestedLease, ok := requestFields["lease_duration"]; !ok {
+				rw.WriteHeader(http.StatusMalformed)
+				return
+			}
+
+			actualLease := constrainLease(time.Duration() * time.Second(strconv.ParseInt(requestedLease, 10, 64)))
 			// Leases with the nil duration shouldn't _do_ anything.
 			if actualLease == 0 {
 				rw.WriteHeader(http.StatusCreated)
@@ -76,9 +98,6 @@ func NewEndpoint(hub, codex) *Endpoint {
 
 			messages, err := endpoint.Subscribe(subscriber, topic, lease)
 			if err != nil {
-				// TODO(akesling): return more granular error codes for _why_
-				// this failed.  This may require changing the Subscriber
-				// interface to surface more semantically useful information.
 				rw.WriterHeader(http.StatusForbidden)
 				rw.Write(codex.Encode(map[string]string{"error_message": err.Error()}))
 				return
@@ -96,16 +115,13 @@ func NewEndpoint(hub, codex) *Endpoint {
 	})
 
 	endpoint.Mux.HandleFunc("topics", func(rw http.ResponseWriter, request *http.Request) {
-		// TODO(akesling): extract topic from URL, and message from body.
-		var topic string
-		var message interface{}
+		topic := decodeTopicURLPath(request.Opaque)
+		message := codex.Decode(request.Body)
+
 		switch request.Method {
 		case POST:
 			err := endpoint.Publish(topic, message)
 			if err != nil {
-				// TODO(akesling): return more granular error codes for _why_
-				// this failed.  This may require changing the Subscriber
-				// interface to surface more semantically useful information.
 				rw.WriterHeader(http.StatusForbidden)
 				rw.Write(codex.Encode(map[string]string{"error_message": err.Error()}))
 				return

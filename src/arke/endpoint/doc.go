@@ -26,8 +26,6 @@ represents creation of a new subscription to bar.baz.  The following fields,
 urlencoded, are required:
  - address: The return address (e.g. http://foo.bar/baz) of the subscriber at
             which to receive messages and subscription updates.
- - topic: The topic to which the client is subscribing as a valid Arke topic
-          string.
  - lease_duration: The desired amount of time for which this subscription to
                    last, encoded as integer seconds.
 
@@ -36,7 +34,7 @@ field "lease_duration" (in the encoding format specified by the endpoint).
 
 Upon failure, the status code will be an appropriate 4xx dependent on the error,
 with the response body being a single "error_message" field containing a human
-readable error string.
+readable error string if one exists.
 
 The HTTP REST Endpoint only supports asynchronous HTTP subscriptions.
 This means that a subscription request must include an HTTP endpoint at which
