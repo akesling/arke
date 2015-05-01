@@ -21,7 +21,7 @@ func (h *httprest) Start(port int) (done <-chan struct{}) {
 }
 
 func (h *httprest) Stop() {
-	// TODO(akesling): actually stop the server... we can start
+	// TODO(akesling): actually stop the server....
 }
 
 func (h *httprest) Publish(topic string, message Message) error {
@@ -37,8 +37,9 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 
 	go func() {
 		for {
+			break
 			// When we get a message, stick it in our buffer... evicting any
-			//
+			// messages that may have overstayed their welcome.
 		}
 	}()
 }
@@ -88,7 +89,9 @@ func NewEndpoint(hub, codex) *Endpoint {
 				return
 			}
 
-			actualLease := constrainLease(time.Duration() * time.Second(strconv.ParseInt(requestedLease, 10, 64)))
+			actualLease := constrainLease(
+				time.Duration() * time.Second(strconv.ParseInt(requestedLease, 10, 64)))
+
 			// Leases with the nil duration shouldn't _do_ anything.
 			if actualLease == 0 {
 				rw.WriteHeader(http.StatusCreated)
@@ -96,7 +99,7 @@ func NewEndpoint(hub, codex) *Endpoint {
 				return
 			}
 
-			messages, err := endpoint.Subscribe(subscriber, topic, lease)
+			messages, err := endpoint.Subscribe(subscriberURL, topic, actualLease)
 			if err != nil {
 				rw.WriterHeader(http.StatusForbidden)
 				rw.Write(codex.Encode(map[string]string{"error_message": err.Error()}))
