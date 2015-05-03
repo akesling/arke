@@ -7,10 +7,10 @@ import (
 
 // Message constitutes the information exchanged across an Arke hub.
 type Message struct {
-	Type   string
-	Source string
-	Meta   map[string]string
-	Body   interface{}
+	Encoding *Codex
+	Source   string
+	// Meta   map[string]string
+	Body interface{}
 }
 
 // publication purveys information for routing a given message.
