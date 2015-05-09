@@ -9,7 +9,8 @@ type Endpoint interface {
 
 	// Stop halts this endpoint, _not_ any underlying hub.
 	// It is idempotent and will not interfere with any stored error.
-	Stop()
+	// TODO(akesling): Implement stop.
+	//	Stop()
 
 	// GetError returns runtime errors for this Endpoint.
 	// The error stored will be nil if no error has occurred and will be reset

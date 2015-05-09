@@ -1,34 +1,44 @@
 package endpoint
 
 import (
+	"arke/codex"
 	"arke/interchange"
+	"bytes"
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const (
-	maxLeaseDuration = time.Duration(5) * time.Minute()
+	maxLeaseDuration = time.Duration(5) * time.Minute
 )
 
 type httprest struct {
-	hub    *interchange.Client
-	port   int
-	mux    *http.ServeMux
-	server AsyncServer
-	codex  *Codex
+	hub     *interchange.Client
+	port    int
+	mux     *http.ServeMux
+	server  *http.Server
+	codex   codex.Codex
+	lastErr error
 }
 
-type AsyncServer http.Server
-
-func (h *httprest) SetPort(port int) {
+func (h *httprest) SetPort(port int) (err error) {
 	h.port = port
+	return nil
 }
 
 func (h *httprest) Start() (done <-chan struct{}, err error) {
+	h.lastErr = nil
+
 	// TODO(akesling): start the http server and hold a handle to stop it later.
-	if port == 0 {
-		return nil, errors.New("Port has not been set. Please call SetPort() with a valid port number.")
+	if h.port == 0 {
+		h.lastErr = errors.New("Port has not been set. Please call SetPort() with a valid port number.")
+		return nil, h.lastErr
 	}
 
 	// TODO(akesling): if the server is already running, return an appropriate
@@ -38,33 +48,38 @@ func (h *httprest) Start() (done <-chan struct{}, err error) {
 	// the underlying http.Server goroutine.
 
 	portString := fmt.Sprintf(":%d", h.port)
-	if h.server == nil {
-		h.server = &http.Server{
-			Addr:           portString,
-			Handler:        h.mux,
-			ReadTimeout:    10 * time.Second,
-			WriteTimeout:   10 * time.Second,
-			MaxHeaderBytes: 1 << 20,
-		}
-	} else {
-		h.server.Addr = portString
+	h.server = &http.Server{
+		Addr:           portString,
+		Handler:        h.mux,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	err = h.server.ListenAndServe()
 	if err != nil {
-		return nil, err
+		h.lastErr = err
+		return nil, h.lastErr
 	}
+	return nil, nil
 }
 
+/*
+// TODO(akesling): Implement stop.
 func (h *httprest) Stop() {
 	h.server.Stop()
 }
+*/
 
-func (h *httprest) Publish(topic string, message Message) error {
-	h.hub.Publish(topic, message)
+func (h *httprest) Publish(topic string, message interchange.Message) error {
+	return h.hub.Publish(topic, message)
 }
 
-func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (<-chan Message, error) {
+func (h *httprest) GetError() (err error) {
+	return h.lastErr
+}
+
+func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (<-chan interchange.Message, error) {
 	// TODO(akesling): Add a GET call to the subscriberURL to verify validity
 	// before adding a hub subscription.
 	messages, err := h.hub.Subscribe(subscriberURL, topic, lease)
@@ -72,6 +87,7 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 	if err != nil {
 		// TODO(akesling): Log this error condition and return the error
 		// wrapped appropriately.
+		return nil, err
 	}
 
 	go func() {
@@ -93,7 +109,7 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 					continue
 				}
 
-				resp, err := client.Post(subscriberURL, h.codex.MIME(), encoded)
+				resp, err := client.Post(subscriberURL, h.codex.MIME(), bytes.NewReader(encoded))
 				defer resp.Body.Close()
 				if err != nil {
 					// TODO(akesling): Log this error.
@@ -114,76 +130,116 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 			}
 		}
 	}()
+
+	return messages, nil
 }
 
 func constrainLease(requestedLease time.Duration) time.Duration {
 	switch requestedLease {
 	case requestedLease > maxLeaseDuration:
 		return maxLeaseDuration
-	case requestedLease < time.Duration:
-		return time.Duration
+	case requestedLease < time.Duration(0):
+		return time.Duration(0)
 	default:
 		return requestedLease
 	}
 }
 
-func decodeTopicURLPath(path string) (topic string) {
+func decodeTopicURLPath(path string) (topic string, err error) {
 	tokens := strings.Split("/", path)
 	for i := range tokens {
-		tokens[i] = url.QueryUnescape(tokens[i])
+		tokens[i], err = url.QueryUnescape(tokens[i])
+		if err != nil {
+			// TODO(akesling): Improve quality of error message.
+			return "", errors.New("URL Path failed topic decoding")
+		}
 	}
-	topic = strings.Join(".", tokens)
+	topic = strings.Join(tokens, ".")
+	return topic, nil
 }
 
-func NewEndpoint(hub, codex) *PortEndpoint {
+func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 	newMux := http.NewServeMux()
-	endpoint := &httprest{hub, newMux, http.codex}
+	endpoint := &httprest{hub: hub, mux: newMux, codex: codex}
 
-	newMux.HandleFunc("subscriptions", func(writer http.ResponseWriter, request *http.Request) {
+	newMux.HandleFunc("subscriptions", func(rw http.ResponseWriter, request *http.Request) {
+		// TODO(akesling): In all errors, return more valuable human-readable
+		// error in the body.
+
 		switch request.Method {
-		case POST:
-			topic := decodeTopicURLPath(request.Opaque)
+		case "POST":
+			topic, err := decodeTopicURLPath(request.Opaque)
+			if err != nil {
+				rw.WriteHeader(http.StatusBadRequest)
+				return
+			}
 
-			requestFields, err := codex.Decode(request.Body)
-			if err != nil || !requestFields.(map[string]string) {
-				rw.WriteHeader(http.StatusMalformed)
+			bodyBytes, err := ioutil.ReadAll(request.Body)
+			if err != nil {
+				rw.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			requestObject, err := codex.Decode(bodyBytes)
+			requestFields, ok := requestObject.(map[string]string)
+			if err != nil || !ok {
+				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			var subscriberURL string
 			if subscriberURL, ok := requestFields["address"]; !ok {
-				rw.WriteHeader(http.StatusMalformed)
+				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			var requestedLease string
-			if requestedLease, ok := requestFields["lease_duration"]; !ok {
-				rw.WriteHeader(http.StatusMalformed)
+			var requestedLeaseString string
+			if requestedLeaseString, ok := requestFields["lease_duration"]; !ok {
+				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
+			requestedLease, err := strconv.ParseInt(requestedLeaseString, 10, 64)
+			if err != nil {
+				rw.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			actualLease := constrainLease(
-				time.Duration() * time.Second(strconv.ParseInt(requestedLease, 10, 64)))
+				time.Duration(requestedLease) * time.Second)
 
 			// Leases with the nil duration shouldn't _do_ anything.
 			if actualLease == 0 {
 				rw.WriteHeader(http.StatusCreated)
-				rw.Write(codex.Encode(map[string]string{"lease_duration": "0"}))
+				encoded, err := codex.Encode(map[string]string{"lease_duration": "0"})
+				if err != nil {
+					rw.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				rw.Write(encoded)
 				return
 			}
 
 			messages, err := endpoint.Subscribe(subscriberURL, topic, actualLease)
 			if err != nil {
-				rw.WriterHeader(http.StatusForbidden)
-				rw.Write(codex.Encode(map[string]string{"error_message": err.Error()}))
+				rw.WriteHeader(http.StatusForbidden)
+				encoded, err := codex.Encode(map[string]string{"error_message": err.Error()})
+				if err != nil {
+					rw.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				rw.Write(encoded)
 				return
 			}
-
-			rw.WriterHeader(http.StatusCreated)
-			rw.Write(codex.Encode(
+			encoded, err := codex.Encode(
 				map[string]string{
-					"lease_duration": fmt.Sprintf("%d", actualLease/time.Second()),
-				}))
+					"lease_duration": fmt.Sprintf("%d", actualLease.Seconds()),
+				})
+			if err != nil {
+				rw.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			rw.WriteHeader(http.StatusCreated)
+			rw.Write(encoded)
 		default:
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			// TODO(akesling): include the appropriate Allow header.
@@ -191,24 +247,50 @@ func NewEndpoint(hub, codex) *PortEndpoint {
 	})
 
 	newMux.HandleFunc("topics", func(rw http.ResponseWriter, request *http.Request) {
-		topic := decodeTopicURLPath(request.Opaque)
-		message := codex.Decode(request.Body)
+		topic, err := decodeTopicURLPath(request.Opaque)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		bodyBytes, err := ioutil.ReadAll(request.Body)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		message, err := codex.Decode(bodyBytes)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		switch request.Method {
-		case POST:
-			err := endpoint.Publish(topic, message)
+		case "POST":
+			err := endpoint.Publish(
+				topic,
+				interchange.Message{
+					Encoding: codex,
+					Source:   request.RemoteAddr,
+					Body:     message,
+				})
 			if err != nil {
-				rw.WriterHeader(http.StatusForbidden)
-				rw.Write(codex.Encode(map[string]string{"error_message": err.Error()}))
+				encoded, err := codex.Encode(map[string]string{"error_message": err.Error()})
+				if err != nil {
+					rw.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				rw.WriteHeader(http.StatusForbidden)
+				rw.Write(encoded)
 				return
 			}
 
-			rw.WriterHeader(http.StatusCreated)
+			rw.WriteHeader(http.StatusCreated)
 		default:
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			// TODO(akesling): include the appropriate Allow header.
 		}
 	})
 
-	return endpoint
+	temp := PortEndpoint(endpoint)
+	return &temp
 }

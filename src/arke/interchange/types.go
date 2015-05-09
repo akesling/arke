@@ -1,13 +1,14 @@
 package interchange
 
 import (
+	"arke/codex"
 	"code.google.com/p/go.net/context"
 	"time"
 )
 
 // Message constitutes the information exchanged across an Arke hub.
 type Message struct {
-	Encoding *Codex
+	Encoding codex.Codex
 	Source   string
 	// Meta   map[string]string
 	Body interface{}
