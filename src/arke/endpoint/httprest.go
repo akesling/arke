@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -15,16 +16,25 @@ import (
 )
 
 const (
-	maxLeaseDuration = time.Duration(5) * time.Minute
+	maxLeaseDuration time.Duration = time.Duration(5) * time.Minute
 )
 
 type httprest struct {
-	hub     *interchange.Client
+	hub     interchange.Client
 	port    int
 	mux     *http.ServeMux
 	server  *http.Server
 	codex   codex.Codex
 	lastErr error
+}
+
+func httpPut(c *http.Client, url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", bodyType)
+	return c.Do(req)
 }
 
 func (h *httprest) SetPort(port int) (err error) {
@@ -79,15 +89,16 @@ func (h *httprest) GetError() (err error) {
 	return h.lastErr
 }
 
-func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (<-chan interchange.Message, error) {
+func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) error {
 	// TODO(akesling): Add a GET call to the subscriberURL to verify validity
 	// before adding a hub subscription.
+	var messages <-chan interchange.Message
 	messages, err := h.hub.Subscribe(subscriberURL, topic, lease)
 
 	if err != nil {
 		// TODO(akesling): Log this error condition and return the error
 		// wrapped appropriately.
-		return nil, err
+		return err
 	}
 
 	go func() {
@@ -103,26 +114,45 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 			// messages that may have overstayed their welcome.
 			select {
 			case m := <-messages:
-				encoded, err := h.codex.Transcode(m.Encoding, m.Body)
+				var encoded []byte
+				if m.Encoding == nil {
+					encoded, err = h.codex.Marshal(m.Body)
+				} else {
+					bodyBytes, ok := m.Body.([]byte)
+					if !ok {
+						// TODO(akesling): Log this error.
+						// Perhaps also account for publishers that incorrectly
+						// set m.Encoding.
+						continue
+					}
+					encoded, err = h.codex.Transmarshal(m.Encoding, bodyBytes)
+				}
+
 				if err != nil {
 					// TODO(akesling): Log this error.
 					continue
 				}
 
-				resp, err := client.Post(subscriberURL, h.codex.MIME(), bytes.NewReader(encoded))
-				defer resp.Body.Close()
+				_, err := client.Post(subscriberURL, h.codex.MIME(), bytes.NewReader(encoded))
 				if err != nil {
 					// TODO(akesling): Log this error.
 					// Perhaps also account for high-error-rate subscribers.
+					// TODO(akesling): Retry on appropriate errors.
 					continue
 				}
 			case <-time.After(lease):
-				encoded, err := h.codex.Encode(map[string]string{"status": "lease expired"})
+				encoded, err := h.codex.Marshal(map[string]string{"status": "lease expired"})
 				if err != nil {
 					// TODO(akesling): Log this error.
 				}
 
-				resp, err := client.Put(subscriberURL, h.codex.MIME(), encoded)
+				_, err = httpPut(client, subscriberURL, h.codex.MIME(), bytes.NewReader(encoded))
+				if err != nil {
+					// TODO(akesling): Log this error.
+					// Perhaps also account for high-error-rate subscribers.
+					// TODO(akesling): Retry on appropriate errors.
+					continue
+				}
 				break SubscribeLoop
 				// TODO(akesling): Handle server Stop() event.
 				// case <-done:
@@ -131,11 +161,11 @@ func (h *httprest) Subscribe(subscriberURL, topic string, lease time.Duration) (
 		}
 	}()
 
-	return messages, nil
+	return nil
 }
 
 func constrainLease(requestedLease time.Duration) time.Duration {
-	switch requestedLease {
+	switch {
 	case requestedLease > maxLeaseDuration:
 		return maxLeaseDuration
 	case requestedLease < time.Duration(0):
@@ -146,21 +176,32 @@ func constrainLease(requestedLease time.Duration) time.Duration {
 }
 
 func decodeTopicURLPath(path string) (topic string, err error) {
-	tokens := strings.Split("/", path)
+	tokens := strings.Split(path, "/")
+	parts := make([]string, 0, len(tokens))
 	for i := range tokens {
-		tokens[i], err = url.QueryUnescape(tokens[i])
+		if tokens[i] == "" {
+			continue
+		}
+
+		piece, err := url.QueryUnescape(tokens[i])
 		if err != nil {
 			// TODO(akesling): Improve quality of error message.
 			return "", errors.New("URL Path failed topic decoding")
 		}
+
+		parts = append(parts, piece)
 	}
-	topic = strings.Join(tokens, ".")
+	topic = strings.Join(parts, ".")
+
+	if topic == "" {
+		return ".", nil
+	}
 	return topic, nil
 }
 
 func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 	newMux := http.NewServeMux()
-	endpoint := &httprest{hub: hub, mux: newMux, codex: codex}
+	endpoint := &httprest{hub: *hub, mux: newMux, codex: codex}
 
 	newMux.HandleFunc("subscriptions", func(rw http.ResponseWriter, request *http.Request) {
 		// TODO(akesling): In all errors, return more valuable human-readable
@@ -168,7 +209,7 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 
 		switch request.Method {
 		case "POST":
-			topic, err := decodeTopicURLPath(request.Opaque)
+			topic, err := decodeTopicURLPath(request.URL.Opaque)
 			if err != nil {
 				rw.WriteHeader(http.StatusBadRequest)
 				return
@@ -180,7 +221,8 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 				return
 			}
 
-			requestObject, err := codex.Decode(bodyBytes)
+			var requestObject interface{}
+			err = codex.Unmarshal(bodyBytes, requestObject)
 			requestFields, ok := requestObject.(map[string]string)
 			if err != nil || !ok {
 				rw.WriteHeader(http.StatusBadRequest)
@@ -188,13 +230,13 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 			}
 
 			var subscriberURL string
-			if subscriberURL, ok := requestFields["address"]; !ok {
+			if subscriberURL, ok = requestFields["address"]; !ok {
 				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			var requestedLeaseString string
-			if requestedLeaseString, ok := requestFields["lease_duration"]; !ok {
+			if requestedLeaseString, ok = requestFields["lease_duration"]; !ok {
 				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -210,7 +252,7 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 			// Leases with the nil duration shouldn't _do_ anything.
 			if actualLease == 0 {
 				rw.WriteHeader(http.StatusCreated)
-				encoded, err := codex.Encode(map[string]string{"lease_duration": "0"})
+				encoded, err := codex.Marshal(map[string]string{"lease_duration": "0"})
 				if err != nil {
 					rw.WriteHeader(http.StatusInternalServerError)
 					return
@@ -219,10 +261,10 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 				return
 			}
 
-			messages, err := endpoint.Subscribe(subscriberURL, topic, actualLease)
+			err = endpoint.Subscribe(subscriberURL, topic, actualLease)
 			if err != nil {
 				rw.WriteHeader(http.StatusForbidden)
-				encoded, err := codex.Encode(map[string]string{"error_message": err.Error()})
+				encoded, err := codex.Marshal(map[string]string{"error_message": err.Error()})
 				if err != nil {
 					rw.WriteHeader(http.StatusInternalServerError)
 					return
@@ -230,7 +272,7 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 				rw.Write(encoded)
 				return
 			}
-			encoded, err := codex.Encode(
+			encoded, err := codex.Marshal(
 				map[string]string{
 					"lease_duration": fmt.Sprintf("%d", actualLease.Seconds()),
 				})
@@ -247,7 +289,7 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 	})
 
 	newMux.HandleFunc("topics", func(rw http.ResponseWriter, request *http.Request) {
-		topic, err := decodeTopicURLPath(request.Opaque)
+		topic, err := decodeTopicURLPath(request.URL.Opaque)
 		if err != nil {
 			rw.WriteHeader(http.StatusBadRequest)
 			return
@@ -258,7 +300,8 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		message, err := codex.Decode(bodyBytes)
+		var message interface{}
+		err = codex.Unmarshal(bodyBytes, message)
 		if err != nil {
 			rw.WriteHeader(http.StatusBadRequest)
 			return
@@ -274,7 +317,7 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 					Body:     message,
 				})
 			if err != nil {
-				encoded, err := codex.Encode(map[string]string{"error_message": err.Error()})
+				encoded, err := codex.Marshal(map[string]string{"error_message": err.Error()})
 				if err != nil {
 					rw.WriteHeader(http.StatusInternalServerError)
 					return

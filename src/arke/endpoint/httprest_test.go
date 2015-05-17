@@ -11,7 +11,7 @@ func TestDecodeTopicURLPath(t *testing.T) {
 		"////":          ".",           // Extra slashes
 		"/foo/////":     "foo",         // Extra slashes
 		"/foo/bar/baz/": "foo.bar.baz", // Normal path
-		"/%20/baz/":     " .bar",       // Escaped path
+		"/%20/baz/":     " .baz",       // Escaped path
 	}
 
 	for input := range input_output_table {
@@ -23,7 +23,7 @@ func TestDecodeTopicURLPath(t *testing.T) {
 		if result != expectation {
 			t.Error(
 				fmt.Sprintf(
-					"Input (%s) mapped to unexpected value (%s) instead of the desired topic (%s).",
+					"Input (%q) mapped to unexpected value (%q) instead of the desired topic (%q).",
 					input, result, expectation))
 		}
 	}

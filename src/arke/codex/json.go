@@ -10,25 +10,27 @@ func (c JSONCodex) MIME() string {
 	return "application/json"
 }
 
-func (c JSONCodex) Encode(go_type interface{}) (encoded []byte, err error) {
-	return json.Marshal(go_type)
+func (c JSONCodex) Marshal(value interface{}) (data []byte, err error) {
+	return json.Marshal(value)
 }
 
-func (c JSONCodex) Decode(encoded []byte) (go_type interface{}, err error) {
-	// TODO(akesling): Implement Decode()
-	return encoded, nil
+func (c JSONCodex) Unmarshal(data []byte, value interface{}) (err error) {
+	return json.Unmarshal(data, value)
 }
 
-func (c JSONCodex) Transcode(encoding Codex, source_encoded []byte) (target_encoded []byte, err error) {
-	// Pass through identity transcodings
+func (c JSONCodex) Transmarshal(encoding Codex, input []byte) (result []byte, err error) {
+	var temp interface{}
+
 	if _, ok := encoding.(JSONCodex); ok {
-		return source_encoded, nil
+		result = make([]byte, len(input))
+		copy(input, result)
+		return result, nil
 	}
 
-	decoded, err := encoding.Decode(source_encoded)
+	err = encoding.Unmarshal(input, temp)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.Encode(decoded)
+	return c.Marshal(temp)
 }

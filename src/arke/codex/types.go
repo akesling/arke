@@ -1,8 +1,21 @@
 package codex
 
+type Marshaller interface {
+	Marshal(value interface{}) (data []byte, err error)
+}
+
+type Unmarshaller interface {
+	Unmarshal(data []byte, value interface{}) (err error)
+}
+
+type Transmarshaller interface {
+	Transmarshal(encoding Codex, input []byte) (result []byte, err error)
+}
+
 type Codex interface {
-	Encode(go_type interface{}) (encoded []byte, err error)
-	Decode(encoded []byte) (go_type interface{}, err error)
-	Transcode(encoding Codex, source_encoded []byte) (target_encoded []byte, err error)
 	MIME() string
+
+	Marshaller
+	Unmarshaller
+	Transmarshaller
 }
