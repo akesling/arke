@@ -199,14 +199,59 @@ func decodeTopicURLPath(path string) (topic string, err error) {
 	return topic, nil
 }
 
-func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
-	newMux := http.NewServeMux()
-	endpoint := &httprest{hub: *hub, mux: newMux, codex: codex}
+func handleTopicRequest(endpoint *httprest, codex codex.Codex) func(rw http.ResponseWriter, request *http.Request) {
+	return func(rw http.ResponseWriter, request *http.Request) {
+		topic, err := decodeTopicURLPath(request.URL.Opaque)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
-	newMux.HandleFunc("subscriptions", func(rw http.ResponseWriter, request *http.Request) {
-		// TODO(akesling): In all errors, return more valuable human-readable
-		// error in the body.
+		bodyBytes, err := ioutil.ReadAll(request.Body)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var message interface{}
+		err = codex.Unmarshal(bodyBytes, message)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
+		switch request.Method {
+		case "POST":
+			err := endpoint.Publish(
+				topic,
+				interchange.Message{
+					Encoding: codex,
+					Source:   request.RemoteAddr,
+					Body:     message,
+				})
+			if err != nil {
+				encoded, err := codex.Marshal(map[string]string{"error_message": err.Error()})
+				if err != nil {
+					rw.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				rw.WriteHeader(http.StatusForbidden)
+				rw.Write(encoded)
+				return
+			}
+
+			rw.WriteHeader(http.StatusCreated)
+		default:
+			rw.WriteHeader(http.StatusMethodNotAllowed)
+			// TODO(akesling): include the appropriate Allow header.
+		}
+	}
+}
+
+func handleSubscriptionRequest(endpoint *httprest, codex codex.Codex) func(rw http.ResponseWriter, request *http.Request) {
+	// TODO(akesling): In all errors, return more valuable human-readable
+	// error in the body.
+
+	return func(rw http.ResponseWriter, request *http.Request) {
 		switch request.Method {
 		case "POST":
 			topic, err := decodeTopicURLPath(request.URL.Opaque)
@@ -286,53 +331,16 @@ func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			// TODO(akesling): include the appropriate Allow header.
 		}
-	})
+	}
+}
 
-	newMux.HandleFunc("topics", func(rw http.ResponseWriter, request *http.Request) {
-		topic, err := decodeTopicURLPath(request.URL.Opaque)
-		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			return
-		}
+func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
+	newMux := http.NewServeMux()
+	endpoint := &httprest{hub: *hub, mux: newMux, codex: codex}
 
-		bodyBytes, err := ioutil.ReadAll(request.Body)
-		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		var message interface{}
-		err = codex.Unmarshal(bodyBytes, message)
-		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			return
-		}
+	newMux.HandleFunc("subscriptions", handleSubscriptionRequest(endpoint, codex))
 
-		switch request.Method {
-		case "POST":
-			err := endpoint.Publish(
-				topic,
-				interchange.Message{
-					Encoding: codex,
-					Source:   request.RemoteAddr,
-					Body:     message,
-				})
-			if err != nil {
-				encoded, err := codex.Marshal(map[string]string{"error_message": err.Error()})
-				if err != nil {
-					rw.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				rw.WriteHeader(http.StatusForbidden)
-				rw.Write(encoded)
-				return
-			}
-
-			rw.WriteHeader(http.StatusCreated)
-		default:
-			rw.WriteHeader(http.StatusMethodNotAllowed)
-			// TODO(akesling): include the appropriate Allow header.
-		}
-	})
+	newMux.HandleFunc("topics", handleTopicRequest(endpoint, codex))
 
 	temp := PortEndpoint(endpoint)
 	return &temp
