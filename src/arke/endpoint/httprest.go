@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"log/syslog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,6 +27,7 @@ type httprest struct {
 	mux     *http.ServeMux
 	server  *http.Server
 	codex   codex.Codex
+	logger  *log.Logger
 	lastErr error
 }
 
@@ -203,19 +206,25 @@ func handleTopicRequest(endpoint *httprest, codex codex.Codex) func(rw http.Resp
 	return func(rw http.ResponseWriter, request *http.Request) {
 		topic, err := decodeTopicURLPath(request.URL.Opaque)
 		if err != nil {
+			endpoint.logger.Printf("Failed to decode provided topic from URL (%q) with error: %q", request.URL.Opaque, err)
 			rw.WriteHeader(http.StatusBadRequest)
+			// TODO(akesling): Write out a human-readable error message.
 			return
 		}
 
 		bodyBytes, err := ioutil.ReadAll(request.Body)
 		if err != nil {
+			endpoint.logger.Printf("Failed read request body with error: %q", err)
 			rw.WriteHeader(http.StatusBadRequest)
+			// TODO(akesling): Write out a human-readable error message.
 			return
 		}
 		var message interface{}
-		err = codex.Unmarshal(bodyBytes, message)
+		err = codex.Unmarshal(bodyBytes, &message)
 		if err != nil {
+			endpoint.logger.Printf("Failed to unmarshal request body using codex with MIME %q resulting in error: %q", codex.MIME(), err)
 			rw.WriteHeader(http.StatusBadRequest)
+			// TODO(akesling): Write out a human-readable error message.
 			return
 		}
 
@@ -256,39 +265,51 @@ func handleSubscriptionRequest(endpoint *httprest, codex codex.Codex) func(rw ht
 		case "POST":
 			topic, err := decodeTopicURLPath(request.URL.Opaque)
 			if err != nil {
+				// TODO(akesling): log error
 				rw.WriteHeader(http.StatusBadRequest)
+				// TODO(akesling): Write out a human-readable error message.
 				return
 			}
 
 			bodyBytes, err := ioutil.ReadAll(request.Body)
 			if err != nil {
+				// TODO(akesling): log error
 				rw.WriteHeader(http.StatusBadRequest)
+				// TODO(akesling): Write out a human-readable error message.
 				return
 			}
 
-			var requestObject interface{}
-			err = codex.Unmarshal(bodyBytes, requestObject)
-			requestFields, ok := requestObject.(map[string]string)
-			if err != nil || !ok {
+			var requestFields map[string]string
+			err = codex.Unmarshal(bodyBytes, requestFields)
+			if err != nil {
+				endpoint.logger.Printf("Failed to unmarshal request body as map[string]string using codex with MIME %q resulting in error: %q", codex.MIME(), err)
 				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			var subscriberURL string
-			if subscriberURL, ok = requestFields["address"]; !ok {
+			subscriberURL, ok := requestFields["address"]
+			if !ok {
+				// TODO(akesling): Log error
 				rw.WriteHeader(http.StatusBadRequest)
+				// TODO(akesling): Write out a human-readable error message.
 				return
 			}
 
 			var requestedLeaseString string
-			if requestedLeaseString, ok = requestFields["lease_duration"]; !ok {
+			requestedLeaseString, ok = requestFields["lease_duration"]
+			if !ok {
+				// TODO(akesling): Log error
 				rw.WriteHeader(http.StatusBadRequest)
+				// TODO(akesling): Write out a human-readable error message.
 				return
 			}
 
 			requestedLease, err := strconv.ParseInt(requestedLeaseString, 10, 64)
 			if err != nil {
+				// TODO(akesling): Log error
 				rw.WriteHeader(http.StatusBadRequest)
+				// TODO(akesling): Write out a human-readable error message.
 				return
 			}
 			actualLease := constrainLease(
@@ -299,6 +320,7 @@ func handleSubscriptionRequest(endpoint *httprest, codex codex.Codex) func(rw ht
 				rw.WriteHeader(http.StatusCreated)
 				encoded, err := codex.Marshal(map[string]string{"lease_duration": "0"})
 				if err != nil {
+					// TODO(akesling): Log error
 					rw.WriteHeader(http.StatusInternalServerError)
 					return
 				}
@@ -334,14 +356,17 @@ func handleSubscriptionRequest(endpoint *httprest, codex codex.Codex) func(rw ht
 	}
 }
 
-func NewEndpoint(hub *interchange.Client, codex codex.Codex) *PortEndpoint {
+func NewHTTPRestEndpoint(hub interchange.Client, codex codex.Codex) PortEndpoint {
 	newMux := http.NewServeMux()
-	endpoint := &httprest{hub: *hub, mux: newMux, codex: codex}
+	endpointLogger, err := syslog.NewLogger(syslog.LOG_ERR|syslog.LOG_USER, log.Lshortfile)
+	if err != nil {
+		log.Panic("HTTPRestEndpoint logger could not be constructed.")
+	}
+	endpoint := &httprest{hub: hub, mux: newMux, codex: codex, logger: endpointLogger}
+	endpoint.logger.Print("Foo!")
 
 	newMux.HandleFunc("subscriptions", handleSubscriptionRequest(endpoint, codex))
-
 	newMux.HandleFunc("topics", handleTopicRequest(endpoint, codex))
 
-	temp := PortEndpoint(endpoint)
-	return &temp
+	return PortEndpoint(endpoint)
 }

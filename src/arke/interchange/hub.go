@@ -173,7 +173,6 @@ func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message
 }
 
 // NewClient creates a new Client for the given hub.
-func NewClient(h *hub) *Client {
-	temp := Client(h)
-	return &temp
+func NewClient(h *hub) Client {
+	return Client(h)
 }
