@@ -156,7 +156,7 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 		candidate := t.Children[index]
 		if candidate.Name[0] == topic[len(overlap)] {
 			nearestTopic = candidate
-			rest = rest[len(overlap):]
+			rest = topic[len(overlap):]
 			overlap = []string{candidate.Name[0]}
 
 			for i := 1; i < len(nearestTopic.Name) && i < len(rest); i += 1 {
