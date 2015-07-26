@@ -162,7 +162,8 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 			for i := 1; i < len(nearestTopic.Name) && i < len(rest); i += 1 {
 				// Names partially overlap
 				if rest[i] != nearestTopic.Name[i] {
-					return nearestTopic, copyTopic(rest), copyTopic(rest[:i])
+					overlap = rest[:i]
+					return nearestTopic, copyTopic(rest), copyTopic(overlap)
 				}
 			}
 
