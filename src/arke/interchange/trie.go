@@ -333,6 +333,7 @@ func (t *topicNode) Apply(parent *topicNode, f func(parent, child *topicNode)) {
 
 func (t *topicNode) render(indentation string) string {
 	var tokens []string
+	child_indentation := indentation + "\t"
 
 	tokens = append(tokens, indentation+strings.Join(t.Name, topicDelimeter)+topicDelimeter)
 
@@ -354,12 +355,12 @@ func (t *topicNode) render(indentation string) string {
 		for i := range leaves {
 			leaf_line = append(leaf_line, strings.Join(leaves[i].Name, topicDelimeter))
 		}
-		tokens = append(tokens, indentation+"\t"+strings.Join(leaf_line, ", "))
+		tokens = append(tokens, child_indentation+strings.Join(leaf_line, ", "))
 	}
 
 	// Render non-leaf children recursively
 	for i := range sub_tries {
-		tokens = append(tokens, sub_tries[i].render(indentation+"\t"))
+		tokens = append(tokens, sub_tries[i].render(child_indentation))
 	}
 
 	return strings.Join(tokens, "\n")
