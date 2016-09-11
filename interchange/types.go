@@ -1,8 +1,8 @@
 package interchange
 
 import (
-	"arke/codex"
 	"code.google.com/p/go.net/context"
+	"github.com/akesling/arke/codex"
 	"time"
 )
 

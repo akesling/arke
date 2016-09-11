@@ -1,11 +1,11 @@
 package endpoint
 
 import (
-	"arke/codex"
-	"arke/interchange"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/akesling/arke/codex"
+	"github.com/akesling/arke/interchange"
 	"io"
 	"io/ioutil"
 	"log"

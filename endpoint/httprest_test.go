@@ -1,12 +1,12 @@
 package endpoint
 
 import (
-	"arke/codex"
-	"arke/interchange"
 	"bufio"
 	"bytes"
 	"code.google.com/p/go.net/context"
 	"fmt"
+	"github.com/akesling/arke/codex"
+	"github.com/akesling/arke/interchange"
 	"io"
 	"io/ioutil"
 	"log"

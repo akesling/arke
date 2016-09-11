@@ -1,10 +1,10 @@
 package main
 
 import (
-	"arke/endpoint/codex"
-	"arke/endpoint/httprest"
-	"arke/interchange"
 	"code.google.com/p/go.net/context"
+	"github.com/akesling/arke/endpoint/codex"
+	"github.com/akesling/arke/endpoint/httprest"
+	"github.com/akesling/arke/interchange"
 	"log"
 )
 
