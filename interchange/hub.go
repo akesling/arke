@@ -6,9 +6,9 @@
 package interchange
 
 import (
-	"code.google.com/p/go.net/context"
 	"errors"
 	"fmt"
+	"golang.org/x/net/context"
 	"strings"
 	"time"
 )

@@ -1,8 +1,8 @@
 package interchange
 
 import (
-	"code.google.com/p/go.net/context"
 	"fmt"
+	"golang.org/x/net/context"
 	"math/rand"
 	"reflect"
 	"testing"

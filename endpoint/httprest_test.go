@@ -3,10 +3,10 @@ package endpoint
 import (
 	"bufio"
 	"bytes"
-	"code.google.com/p/go.net/context"
 	"fmt"
 	"github.com/akesling/arke/codex"
 	"github.com/akesling/arke/interchange"
+	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
 	"log"
