@@ -1,4 +1,4 @@
-package server
+package main
 
 // An Endpoint provides remote services access to an Arke hub.
 //type Endpoint interface {
