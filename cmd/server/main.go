@@ -12,11 +12,12 @@ func main() {
 	hub_ctx, cancel_hub := context.WithCancel(context.Background())
 	defer cancel_hub()
 
-	hub := interchange.NewHub(hub_ctx)
-	endpoint := httprest.NewEndpoint(hub.NewClient(), codex.NewJSON())
+	hub := interchange.NewHub(hub_ctx, cancel_hub)
+	endpoint := httprest.NewHTTPRestEndpoint(interchange.NewClient(hub), codex.JSONCodex{})
 
-	port := "8080"
-	endpoint_done, err := endpoint.Start(port)
+	port := 8080
+	endpoint.SetPort(port)
+	endpoint_done, err := endpoint.Start()
 	if err != nil {
 		log.Fatal(err)
 	}
