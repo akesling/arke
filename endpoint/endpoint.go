@@ -1,3 +1,7 @@
+/*
+Package arke/endpoint contains Arke transport components including server and
+client implementations.
+*/
 package endpoint
 
 // Endpoints are wrappers for Arke Hubs which communicate with external clients.
