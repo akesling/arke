@@ -1,10 +1,11 @@
-package endpoint
+package httprest
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
 	"github.com/akesling/arke/codex"
+	"github.com/akesling/arke/endpoint"
 	"github.com/akesling/arke/interchange"
 	"io"
 	"io/ioutil"
@@ -356,17 +357,17 @@ func handleSubscriptionRequest(endpoint *httprest, codex codex.Codex) func(rw ht
 	}
 }
 
-func NewHTTPRestEndpoint(hub interchange.Client, codex codex.Codex) PortEndpoint {
+func NewHTTPRestEndpoint(hub interchange.Client, codex codex.Codex) endpoint.PortEndpoint {
 	newMux := http.NewServeMux()
 	endpointLogger, err := syslog.NewLogger(syslog.LOG_ERR|syslog.LOG_USER, log.Lshortfile)
 	if err != nil {
 		log.Panic("HTTPRestEndpoint logger could not be constructed.")
 	}
-	endpoint := &httprest{hub: hub, mux: newMux, codex: codex, logger: endpointLogger}
-	endpoint.logger.Print("Foo!")
+	newEndpoint := &httprest{hub: hub, mux: newMux, codex: codex, logger: endpointLogger}
+	newEndpoint.logger.Print("Foo!")
 
-	newMux.HandleFunc("subscriptions", handleSubscriptionRequest(endpoint, codex))
-	newMux.HandleFunc("topics", handleTopicRequest(endpoint, codex))
+	newMux.HandleFunc("subscriptions", handleSubscriptionRequest(newEndpoint, codex))
+	newMux.HandleFunc("topics", handleTopicRequest(newEndpoint, codex))
 
-	return PortEndpoint(endpoint)
+	return endpoint.PortEndpoint(newEndpoint)
 }
