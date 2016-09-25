@@ -121,10 +121,22 @@ func (h *hub) start() {
 					}
 				}
 			case <-h.root.ctx.Done():
+				cancelPendingSubscriptionRequests(h.sub);
 				break event_loop
 			}
 		}
 	}()
+}
+
+func cancelPendingSubscriptionRequests(subs chan*subscription) {
+	for {
+		select {
+		case s := <-subs:
+			close(s.Client)
+		default:
+			break
+		}
+	}
 }
 
 // Publish synchronously issues a publication request on the given topic.
@@ -152,6 +164,12 @@ func (h *hub) Publish(topic string, message Message) error {
 // amount of time that this subscriber may be active... the subscription may
 // last longer than that time after Subscribe() invocation.
 func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message, error) {
+	select {
+	case <-h.root.ctx.Done():
+		return nil, errors.New("Cannot subscribe to a closed hub.");
+	default:
+	}
+
 	deadline := time.Now().Add(lease)
 	comm := make(chan Message)
 	var expandedTopic []string
