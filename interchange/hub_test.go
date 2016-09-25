@@ -29,15 +29,21 @@ func TestFindOrCreateTopic(t *testing.T) {
 
 		node_again, err := h.findOrCreateTopic(topic_name)
 		if err != nil && node_again != nil {
-			t.Error(fmt.Sprintf("For name %q, findOrCreateTopic returned error when topicNode should have been found.", topic_name))
+			t.Error(fmt.Sprintf(
+				"For name %q, findOrCreateTopic returned error when topicNode should have been found.",
+				topic_name))
 		}
 		if node != node_again {
-			t.Error(fmt.Sprintf("For name %q, findOrCreateTopic did not return the same topicNode on first retrieval after creation.", topic_name))
+			t.Error(fmt.Sprintf(
+				"For name %q, findOrCreateTopic did not return the same topicNode on first retrieval after creation.",
+				topic_name))
 		}
 
 		node_again, err = h.findOrCreateTopic(topic_name)
 		if node != node_again {
-			t.Error(fmt.Sprintf("For name %q, findOrCreateTopic did not return the same topicNode on repeated retrieval.", topic_name))
+			t.Error(fmt.Sprintf(
+				"For name %q, findOrCreateTopic did not return the same topicNode on repeated retrieval.",
+				topic_name))
 		}
 	}
 }
