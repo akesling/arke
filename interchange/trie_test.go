@@ -54,11 +54,14 @@ func TestAddSub(t *testing.T) {
 		select {
 		case message_received := <-client_messages:
 			if !reflect.DeepEqual(message_sent, message_received) {
-				t.Error(fmt.Sprintf("(%d): Message received (%+v) did not match message expected (%+v)", i, message_received, message_sent))
+				t.Error(fmt.Sprintf(
+					"(%d): Message received (%+v) did not match message expected (%+v)",
+					i, message_received, message_sent))
 			}
 		// Wait for messages to actually get a chance to be scheduled.
 		case <-time.After(time.Duration(4) * time.Second):
-			t.Error(fmt.Sprintf("(%d): Expected message never received from subscriber", i))
+			t.Error(fmt.Sprintf(
+				"(%d): Expected message never received from subscriber", i))
 		}
 	}
 
@@ -66,7 +69,9 @@ func TestAddSub(t *testing.T) {
 	select {
 	case notified_topic := <-death_notifications:
 		if !reflect.DeepEqual(notified_topic, topic) {
-			t.Error(fmt.Sprintf("Expected topic (%q) does not equal topic notified (%q)", topic, notified_topic))
+			t.Error(fmt.Sprintf(
+				"Expected topic (%q) does not equal topic notified (%q)",
+				topic, notified_topic))
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timed out waiting for notification of subscriber death.")
@@ -75,7 +80,7 @@ func TestAddSub(t *testing.T) {
 
 	select {
 	case <-client_messages:
-	default:
+	case <-time.After(1 * time.Second):
 		t.Error("Client channel not closed by dying subscriber")
 	}
 }

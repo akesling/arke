@@ -39,11 +39,11 @@ func isValidTopic(topic []string) bool {
 	return true
 }
 
-// A topicNode represents a vertex in the topic trie.
+// topicNode represents a vertex in the topic trie.
 //
 // Topic nodes occur when there exists a subscriber on a topic.  You can think
 // of a topic as a word whose "characters" are delimited by periods. The topic
-// trie as such acts as a trie over these tokens The root is implicitly named
+// trie as such acts as a trie over these tokens. The root is implicitly named
 // '.' and acts specially as it doesn't collapse, the following example will
 // show this in practice.
 //
@@ -196,8 +196,8 @@ func (t *topicNode) MaybeFindTopic(topic []string) (nearestTopic *topicNode, res
 // want to create a node foo.bar.qux.  In this case, we must create a foo.bar
 // node with foo.bar.baz being renamed baz and assigned as a child of foo.bar.
 // This requires rebinding a new context that derives from the new foo.bar for
-// baz, its subscribers, and the subtrie beneath baz.
-// We then add a qux node that derives from foo.bar.
+// baz, its subscribers, and the subtrie beneath baz.  We then add a qux node
+// that derives from foo.bar.
 func (t *topicNode) CreateChild(subTopic []string) (newTopic *topicNode, err error) {
 	if !isValidTopic(subTopic) {
 		return nil, errors.New(fmt.Sprintf(
