@@ -1,6 +1,7 @@
 package interchange
 
 import (
+	"log"
 	"fmt"
 	"golang.org/x/net/context"
 	"math/rand"
@@ -129,6 +130,57 @@ func TestPubSubWorks(t *testing.T) {
 		}
 	case <-time.After(time.Duration(4) * time.Second):
 		t.Error("Message was never received")
+		t.FailNow()
+	}
+}
+
+func TestInOrderReceipt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hub := NewHub(ctx, cancel)
+
+	source, err := hub.Subscribe("I'm a subscriber!", "foo.bar.baz", time.Duration(1)*time.Minute)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	barrier := make(chan bool)
+	// Start testing subscriber
+	go func() {
+		success := true;
+		log.Println("Starting subscriber routine.")
+failure:
+		for i := 0; i < 100; i++ {
+			log.Printf("Processing %d\n", i)
+			select {
+			case msg := <-source:
+				if msg.Body.(int) != i {
+					t.Error(fmt.Sprintf("Message received (%d) was not received in the expected order, expected %d.", msg.Body, i))
+					success = false
+					break failure
+				}
+			case <-time.After(time.Duration(4) * time.Second):
+				log.Println("Timing out")
+				t.Error(fmt.Sprintf("Message (%d) timed out.", i))
+				success = false
+				break failure
+			}
+		}
+		log.Println("Closing subscriber routine.")
+		barrier <- success
+	}()
+
+	for i := 0; i < 100; i++ {
+		my_message := Message{Body: i}
+		err = hub.Publish("foo.bar", my_message)
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+	}
+
+	success := <-barrier
+	if !success {
 		t.FailNow()
 	}
 }

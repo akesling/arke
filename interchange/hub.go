@@ -6,6 +6,7 @@
 package interchange
 
 import (
+	"log"
 	"errors"
 	"fmt"
 	"golang.org/x/net/context"
@@ -37,6 +38,7 @@ type hub struct {
 
 // NewHub builds an Arke hub.
 func NewHub(ctx context.Context, cancel context.CancelFunc) *hub {
+	log.Println("Creating new Arke hub.")
 	new_root := newTopicNode(ctx, cancel, []string{rootName})
 
 	h := &hub{
@@ -77,6 +79,7 @@ func (h *hub) findOrCreateTopic(topic []string) (found *topicNode, err error) {
 }
 
 func (h *hub) start() {
+	log.Println("Starting Arke hub.")
 	go func() {
 		// LET THE EVENTS BEGIN!
 	event_loop:
