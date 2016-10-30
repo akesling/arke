@@ -113,6 +113,9 @@ func TestPubSubWorks(t *testing.T) {
 		t.FailNow()
 	}
 
+	// Wait for connection notification
+	<-source
+
 	my_message := Message{Body: "foo"}
 	go func() {
 		err = hub.Publish("foo.bar", my_message)
@@ -144,6 +147,9 @@ func TestInOrderReceipt(t *testing.T) {
 		t.FailNow()
 	}
 
+	// Wait for connection notification
+	<-source
+
 	barrier := make(chan bool)
 	// Start testing subscriber
 	go func() {
@@ -151,7 +157,6 @@ func TestInOrderReceipt(t *testing.T) {
 		log.Println("Starting subscriber routine.")
 failure:
 		for i := 0; i < 100; i++ {
-			log.Printf("Processing %d\n", i)
 			select {
 			case msg := <-source:
 				if msg.Body.(int) != i {
@@ -195,9 +200,8 @@ func TestHubCancellationClosesSubscription(t *testing.T) {
 		t.FailNow()
 	}
 
-	// XXX(akesling): There exists a race condition here between
-	// cancelation and subscription, making this test rather flaky
-	// (and the code under testincorrect).
+	<-source
+
 	cancel()
 	select {
 	case <-ctx.Done():
