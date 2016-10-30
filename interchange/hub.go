@@ -105,7 +105,10 @@ func (h *hub) start() {
 					continue
 				}
 
-				topic.AddSub(newSub, h.cleanup)
+				subscriber := topic.AddSub(newSub, h.cleanup)
+				subscriber.sink <- Message{
+					Body: "Subscriber is now connected.",
+				}
 			case topic := <-h.cleanup:
 				tNode, err := h.findTopic(topic)
 				if err != nil {
@@ -166,6 +169,9 @@ func (h *hub) Publish(topic string, message Message) error {
 // subscription is now queued.  The subscription lease returned is the minimum
 // amount of time that this subscriber may be active... the subscription may
 // last longer than that time after Subscribe() invocation.
+//
+// The first message received on the returned channel will be a notification of
+// connection with a Message.Body of type string.
 func (h *hub) Subscribe(name, topic string, lease time.Duration) (<-chan Message, error) {
 	select {
 	case <-h.root.ctx.Done():
